@@ -9,6 +9,7 @@ dependencies = [
     "mypy",
     "pygame",
     "pydantic",
+    "google-genai",
 ]
 
 [tool.flake8]
