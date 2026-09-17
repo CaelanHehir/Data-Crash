@@ -1,15 +1,19 @@
 from __future__ import annotations
 import pygame
 
+from src.display.game_window import Window
+
 
 class Game:
-    def __init__(self, title: str = "Data Crash", width: int = 960,
-                 height: int = 540, target_fps: int = 60) -> None:
-        pygame.init()
-        self.screen = pygame.display.set_mode((width, height))
-        pygame.display.set_caption(title)
-        self.clock = pygame.time.Clock()
-        self.target_fps = target_fps
+    def __init__(self, title: str = "Data Crash", width: int = 1400,
+                 height: int = 800, target_fps: int = 60) -> None:
+        self.window = Window(
+            title=title,
+            width=width,
+            height=height,
+            target_fps=target_fps,
+        )
+        self.screen = self.window.screen
         self.running = True
         self.current_state = None
 
@@ -21,7 +25,7 @@ class Game:
 
     def run(self) -> None:
         while self.running:
-            dt = self.clock.tick(self.target_fps) / 1000.0
+            dt = self.window.tick()
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -29,8 +33,10 @@ class Game:
                 else:
                     self.current_state.handle_event(event)
 
-            self.current_state.update(dt)
-            self.current_state.render(self.screen)
-            pygame.display.flip()
+            if self.current_state is not None:
+                self.current_state.update(dt)
+                self.current_state.render(self.window.screen)
 
-        pygame.quit()
+            self.window.flip()
+
+        self.window.close()
