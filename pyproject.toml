@@ -1,0 +1,21 @@
+[project]
+name = "data-crash"
+version = "0.1.0"
+description = "Data-Crash game project"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "flake8",
+    "mypy",
+    "pygame",
+    "pydantic",
+]
+
+[tool.flake8]
+exclude = [".venv", "__pycache__"]
+
+[tool.mypy]
+python_version = "3.13"
+warn_unused_configs = true
+check_untyped_defs = true
+ignore_missing_imports = true
