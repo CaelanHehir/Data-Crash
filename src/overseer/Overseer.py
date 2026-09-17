@@ -41,9 +41,9 @@ class Overseer:
         self._thread: threading.Thread | None = None
 
     def request(self, prompt: str) -> bool:
-        """Start an LLM request in the background.
+        """ Start an LLM request in the background.
 
-        Returns False if a request is already running.
+            Returns False if a request is already running.
         """
         if self._thread and self._thread.is_alive():
             return False
