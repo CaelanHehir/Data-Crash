@@ -3,8 +3,8 @@ import pygame
 
 
 class Window:
-    def __init__(self, title: str = "Data Crash", width: int = 1400,
-                 height: int = 800, target_fps: int = 60) -> None:
+    def __init__(self, title: str = "Data Crash", width: int = 1000,
+                 height: int = 1000, target_fps: int = 60) -> None:
         pygame.init()
         self.width = width
         self.height = height
@@ -29,8 +29,8 @@ class Window:
         pygame.quit()
 
 
-def run_game_window(title: str = "Data Crash", width: int = 1400,
-                    height: int = 800, target_fps: int = 60) -> None:
+def run_game_window(title: str = "Data Crash", width: int = 1000,
+                    height: int = 1000, target_fps: int = 60) -> None:
     """Create and run a simple game window until closed."""
     window = Window(title=title, width=width, height=height,
                     target_fps=target_fps)

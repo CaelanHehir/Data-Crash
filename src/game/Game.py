@@ -6,7 +6,7 @@ from src.display.game_window import Window
 
 class Game:
     def __init__(self, title: str = "Data Crash", width: int = 1400,
-                 height: int = 800, target_fps: int = 60) -> None:
+                 height: int = 1000, target_fps: int = 60) -> None:
         self.window = Window(title=title, width=width,
                              height=height, target_fps=target_fps)
         self.screen = self.window.screen
