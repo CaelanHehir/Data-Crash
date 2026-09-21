@@ -32,12 +32,8 @@ class Window:
 def run_game_window(title: str = "Data Crash", width: int = 1400,
                     height: int = 800, target_fps: int = 60) -> None:
     """Create and run a simple game window until closed."""
-    window = Window(
-        title=title,
-        width=width,
-        height=height,
-        target_fps=target_fps,
-    )
+    window = Window(title=title, width=width, height=height,
+                    target_fps=target_fps)
 
     running = True
     while running:
