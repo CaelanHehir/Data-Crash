@@ -6,8 +6,10 @@ from src.game.buildings.Building import Building
 
 
 class Cell:
-    def __init__(self, name: str, building: Optional[Building]) -> None:
-        self.name = name
+    def __init__(self, sector: str, id: int,
+                 building: Optional[Building]) -> None:
+        self.sector = sector
+        self.id = id
         self.building = building
         self.rebels = 0
         self.robots = 0
@@ -16,6 +18,14 @@ class Cell:
         if number < 1:
             raise ValueError("rebel number cannot be negative")
         self.rebels += number
+
+    def remove_rebels(self, number: int) -> None:
+        if number < 1:
+            raise ValueError("rebel number cannot be negative")
+        if number > self.rebels:
+            raise ValueError("cannot remove more rebels than available")
+
+        self.rebels -= number
 
     def add_robots(self, number: int) -> None:
         if number < 1:

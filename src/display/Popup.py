@@ -30,8 +30,9 @@ class Popup:
         if not self.active:
             return
 
+        lines = self.description.split("\n")
         width = 380
-        height = 160
+        height = max(160, 76 + len(lines) * 24)
         x = screen.get_width() - width - 24
         y = 24
 
@@ -46,7 +47,6 @@ class Popup:
         title_surface = title_font.render(self.title, True, (255, 255, 255))
         screen.blit(title_surface, (x + 16, y + 12))
 
-        lines = self.description.split("\n")
         for index, line in enumerate(lines):
             text = body_font.render(line, True, (220, 230, 250))
             screen.blit(text, (x + 16, y + 56 + index * 24))
