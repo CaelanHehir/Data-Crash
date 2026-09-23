@@ -4,7 +4,6 @@ import math
 import pygame
 from typing import Optional
 
-from src.game.buildings.Datacenter import Datacenter
 from src.game.buildings.Headquarters import Headquarters
 from src.game.world.Map import Map
 from src.display.text_renderer import render_text, get_font
@@ -185,7 +184,9 @@ class MapRenderer:
 
     def draw(self, screen: pygame.Surface, game_map: Map,
              selected_cell: Optional[tuple[int, int]] = None,
-             rebel_counts: Optional[dict[tuple[int, int], int]] = None
+             rebel_counts: Optional[dict[tuple[int, int], int]] = None,
+             outpost_construction_progress:
+             Optional[dict[tuple[int, int], float]] = None
              ) -> None:
         self._update_zoom_bounds(screen, game_map)
         self.zoom = max(self.min_zoom, min(self.max_zoom, self.zoom))
@@ -203,13 +204,17 @@ class MapRenderer:
                                            screen,
                                            game_map)
 
-                color = (35, 45, 65)
-                if isinstance(cell.building, Headquarters):
-                    color = (255, 198, 92)
-                elif isinstance(cell.building, Datacenter):
-                    color = (107, 178, 255)
+                color = cell.color
 
                 pygame.draw.rect(screen, color, tile_rect, border_radius=3)
+
+                if outpost_construction_progress is not None:
+                    progress = outpost_construction_progress.get((row_index,
+                                                                  col_index),
+                                                                 0.0)
+                    self._draw_outpost_construction_progress(screen,
+                                                             tile_rect,
+                                                             progress)
 
                 if isinstance(cell.building, Headquarters):
                     self._draw_headquarters_progress(screen,
@@ -256,6 +261,25 @@ class MapRenderer:
             progress_color = (107, 178, 255, 95)
         else:
             progress_color = (255, 120, 120, 95)
+
+        self._draw_radial_progress(screen, tile_rect, progress, progress_color)
+
+    def _draw_outpost_construction_progress(self, screen: pygame.Surface,
+                                            tile_rect: pygame.Rect,
+                                            progress: float) -> None:
+        if progress <= 0:
+            return
+
+        progress_color = (180, 130, 255, 115)
+        self._draw_radial_progress(screen, tile_rect, progress, progress_color)
+
+    def _draw_radial_progress(self, screen: pygame.Surface,
+                              tile_rect: pygame.Rect, progress: float,
+                              progress_color: tuple[int, int, int, int]
+                              ) -> None:
+        progress = max(0.0, min(1.0, progress))
+        if progress <= 0:
+            return
 
         overlay = pygame.Surface(tile_rect.size, pygame.SRCALPHA)
         cell_center = (tile_rect.width // 2, tile_rect.height // 2)

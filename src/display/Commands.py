@@ -20,6 +20,8 @@ class CommandContext:
     commander: Commander
     toggle_headquarters_mode: Callable[[tuple[int, int]], None]
     start_rebel_move_mode: Callable[[tuple[int, int]], None]
+    start_outpost_build_mode: Callable[[tuple[int, int]], None]
+    can_build_outpost: Callable[[tuple[int, int]], bool]
 
 
 @dataclass
@@ -47,9 +49,9 @@ class Commands:
                       CommandItem("M",
                                   self.start_rebel_move,
                                   self.can_start_rebel_move),
-                      CommandItem("C",
-                                  self._placeholder_command_c,
-                                  self._always_available),
+                      CommandItem("O",
+                                  self.start_outpost_build,
+                                  self.can_start_outpost_build),
                       CommandItem("D",
                                   self._placeholder_command_d,
                                   self._always_available)]
@@ -188,6 +190,15 @@ class Commands:
 
     def can_start_rebel_move(self, context: CommandContext) -> bool:
         return context.available_rebels > 0
+
+    def start_outpost_build(self, context: CommandContext) -> None:
+        if not self.can_start_outpost_build(context):
+            return
+
+        context.start_outpost_build_mode(context.cell_coords)
+
+    def can_start_outpost_build(self, context: CommandContext) -> bool:
+        return context.can_build_outpost(context.cell_coords)
 
     def _always_available(self, _context: CommandContext) -> bool:
         return True

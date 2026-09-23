@@ -78,7 +78,8 @@ class Map:
         for sector in chosen_sectors[1:]:
             datacenter_cells.append(choice(cells_by_sector[sector]))
 
-        headquarters_cell.building = Headquarters(name="Headquarters")
+        headquarters_cell.set_building(Headquarters(name="Headquarters"))
 
         for index, cell in enumerate(datacenter_cells, start=1):
-            cell.building = Datacenter(name=f"Datacenter{index}")
+            cell.set_building(Datacenter(name=f"Datacenter{index}"))
+            cell.add_robots(150)

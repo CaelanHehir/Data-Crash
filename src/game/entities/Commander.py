@@ -7,9 +7,9 @@ from src.game.world.Map import Map
 
 
 class Commander:
-    STARTING_MANPOWER = 10
-    REBEL_MOVE_TIME = 1.0
-    REBEL_MOVE_BATCH_SIZE = 10
+    STARTING_MANPOWER = 100
+    REBEL_MOVE_TIME = 2.0
+    REBEL_MOVE_BATCH_SIZE = 50
 
     def __init__(self, manpower: int = STARTING_MANPOWER) -> None:
         if manpower < 0:

@@ -9,7 +9,7 @@ class Headquarters(Building):
     MANPOWER_PER_CYCLE = 5
     MOBILIZING_INTERVAL = 10.0
     REBEL_COST = 1
-    REBELS_PER_CYCLE = 1
+    REBELS_PER_CYCLE = 10
     TRAINING_INTERVAL = 3.0
 
     def __init__(self, name: str) -> None:

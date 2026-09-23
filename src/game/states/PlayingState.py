@@ -7,6 +7,7 @@ from src.display.Commands import CommandContext, Commands
 from src.display.Popup import Popup
 from src.display.map_renderer import MapRenderer
 from src.game.buildings.Headquarters import Headquarters
+from src.game.buildings.Outpost import Outpost
 from src.game.entities.Commander import Commander
 from src.game.world.Cell import Cell
 from src.game.world.Map import Map
@@ -32,6 +33,11 @@ class RebelMoveBatch:
     time_until_advance: float = 0.0
 
 
+@dataclass
+class OutpostConstruction:
+    elapsed: float = 0.0
+
+
 class PlayingState(State):
     def __init__(self, game) -> None:
         super().__init__(game)
@@ -50,6 +56,8 @@ class PlayingState(State):
         self._commands_consumed_click = False
         self.move_selection: Optional[MoveSelection] = None
         self.active_rebel_moves: list[RebelMoveBatch] = []
+        self.active_outpost_constructions: dict[tuple[int, int],
+                                                OutpostConstruction] = {}
 
     def enter(self) -> None:
         # Reset/initialize a fresh run here (entities, score, etc.)
@@ -62,6 +70,7 @@ class PlayingState(State):
         self._commands_consumed_click = False
         self.move_selection = None
         self.active_rebel_moves = []
+        self.active_outpost_constructions = {}
         self.commands.hide()
         self.popup.hide()
 
@@ -79,15 +88,47 @@ class PlayingState(State):
 
         if self.move_selection is not None:
             if event.type == pygame.MOUSEMOTION:
+                if event.buttons[0]:
+                    if self._left_mouse_down_pos is not None:
+                        delta_x = abs(event.pos[0]
+                                      - self._left_mouse_down_pos[0])
+                        delta_y = abs(event.pos[1]
+                                      - self._left_mouse_down_pos[1])
+                        if (delta_x >= self._drag_threshold
+                                or delta_y >= self._drag_threshold):
+                            self._left_mouse_dragged = True
+
+                    self.map_renderer.pan_to(event.pos,
+                                             self.game.screen,
+                                             self.game_map)
+
                 self.update_move_hover(event.pos)
                 return
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    self.handle_move_selection_click(event.pos)
+                    self._left_mouse_down_pos = event.pos
+                    self._left_mouse_dragged = False
+                    self.map_renderer.start_pan(event.pos)
                 elif event.button == 3:
+                    self.map_renderer.stop_pan()
+                    self._left_mouse_down_pos = None
+                    self._left_mouse_dragged = False
                     self.cancel_rebel_move_mode()
                 return
+            if event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1:
+                    self.map_renderer.stop_pan()
+                    if (self._left_mouse_down_pos is not None
+                            and not self._left_mouse_dragged):
+                        self.handle_move_selection_click(event.pos)
+
+                    self._left_mouse_down_pos = None
+                    self._left_mouse_dragged = False
+                return
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                self.map_renderer.stop_pan()
+                self._left_mouse_down_pos = None
+                self._left_mouse_dragged = False
                 self.cancel_rebel_move_mode()
                 return
 
@@ -170,6 +211,12 @@ class PlayingState(State):
 
             if isinstance(cell.building, Headquarters):
                 description_lines.append(f"Mode: {cell.building.mode}")
+        elif cell_coords in self.active_outpost_constructions:
+            progress = self.outpost_construction_progress(cell_coords)
+            build_rate = self.outpost_build_rate_multiplier(cell_coords)
+            description_lines.append("Building: Outpost (under construction)")
+            description_lines.append(f"Progress: {progress * 100:.0f}%")
+            description_lines.append(f"Build rate: {build_rate:.2f}x")
 
         description_lines.extend([
             f"Rebels: {self.visible_rebel_count(cell_coords)}",
@@ -205,7 +252,74 @@ class PlayingState(State):
             available_rebels=self.visible_rebel_count(cell_coords),
             commander=self.commander,
             toggle_headquarters_mode=self.toggle_headquarters_mode,
-            start_rebel_move_mode=self.start_rebel_move_mode)
+            start_rebel_move_mode=self.start_rebel_move_mode,
+            start_outpost_build_mode=self.start_outpost_build_mode,
+            can_build_outpost=self.can_build_outpost)
+
+    def start_outpost_build_mode(self, cell_coords: tuple[int, int]) -> None:
+        if not self.can_build_outpost(cell_coords):
+            return
+
+        self.active_outpost_constructions[cell_coords] = OutpostConstruction()
+
+        if self.selected_cell_coords == cell_coords and self.selected_cell:
+            self.update_popup_for_cell(cell_coords, self.selected_cell)
+
+    def can_build_outpost(self, cell_coords: tuple[int, int]) -> bool:
+        if cell_coords in self.active_outpost_constructions:
+            return False
+
+        row, col = cell_coords
+        cell = self.game_map.grid[row][col]
+
+        if cell.building is not None:
+            return False
+
+        if self.visible_rebel_count(cell_coords) < Outpost.REBEL_REQUIREMENT:
+            return False
+
+        if self.sector_has_allied_structure(cell.sector):
+            return False
+
+        if self.sector_has_active_outpost_construction(cell.sector):
+            return False
+
+        return True
+
+    def sector_has_allied_structure(self, sector: str) -> bool:
+        for row in self.game_map.grid:
+            for cell in row:
+                if (cell.sector == sector
+                        and isinstance(cell.building, Headquarters)):
+                    return True
+
+        return False
+
+    def sector_has_active_outpost_construction(self, sector: str) -> bool:
+        for row, col in self.active_outpost_constructions:
+            if self.game_map.grid[row][col].sector == sector:
+                return True
+
+        return False
+
+    def outpost_construction_progress(self,
+                                      cell_coords: tuple[int, int]) -> float:
+        construction = self.active_outpost_constructions.get(cell_coords)
+        if construction is None:
+            return 0.0
+
+        return min(1.0, construction.elapsed / Outpost.BUILD_TIME)
+
+    def outpost_build_rate_multiplier(self,
+                                      cell_coords: tuple[int, int]) -> float:
+        row, col = cell_coords
+        cell = self.game_map.grid[row][col]
+        return max(0.0, cell.rebels / Outpost.REBEL_REQUIREMENT)
+
+    def outpost_construction_progress_map(
+            self) -> dict[tuple[int, int], float]:
+        return {cell_coords: self.outpost_construction_progress(cell_coords)
+                for cell_coords in self.active_outpost_constructions}
 
     def start_rebel_move_mode(self, source_coords: tuple[int, int]) -> None:
         if self.visible_rebel_count(source_coords) <= 0:
@@ -396,6 +510,7 @@ class PlayingState(State):
 
     def update(self, dt: float) -> None:
         self.update_headquarters(dt)
+        self.update_outpost_constructions(dt)
         self.update_rebel_moves(dt)
 
         result = self.overseer.poll()
@@ -406,6 +521,51 @@ class PlayingState(State):
                 self.apply_enemy_action(payload)
             else:
                 print(f"LLM call failed: {payload}")
+
+        self.clear_battle_flags()
+
+    def update_outpost_constructions(self, dt: float) -> None:
+        if dt < 0:
+            raise ValueError("dt cannot be negative")
+
+        selected_changed = False
+        completed_cells: list[tuple[int, int]] = []
+        interrupted_cells: list[tuple[int, int]] = []
+
+        for (cell_coords,
+             construction) in self.active_outpost_constructions.items():
+            row, col = cell_coords
+            cell = self.game_map.grid[row][col]
+
+            if cell.battle_occurred:
+                interrupted_cells.append(cell_coords)
+            else:
+                build_rate = self.outpost_build_rate_multiplier(cell_coords)
+                construction.elapsed += dt * build_rate
+                if construction.elapsed >= Outpost.BUILD_TIME:
+                    completed_cells.append(cell_coords)
+
+            if self.selected_cell_coords == cell_coords:
+                selected_changed = True
+
+        for cell_coords in interrupted_cells:
+            del self.active_outpost_constructions[cell_coords]
+
+        for row, col in completed_cells:
+            del self.active_outpost_constructions[(row, col)]
+            cell = self.game_map.grid[row][col]
+            outpost_name = f"Outpost {cell.sector}"
+            cell.set_building(Outpost(name=outpost_name))
+
+        if selected_changed and self.selected_cell is not None:
+            selected_coords = self.selected_cell_coords
+            if selected_coords is not None:
+                self.update_popup_for_cell(selected_coords, self.selected_cell)
+
+    def clear_battle_flags(self) -> None:
+        for row in self.game_map.grid:
+            for cell in row:
+                cell.clear_battle_flag()
 
     def update_headquarters(self, dt: float) -> None:
         selected_changed = False
@@ -476,7 +636,9 @@ class PlayingState(State):
         screen.fill((10, 12, 20))
         self.map_renderer.draw(screen, self.game_map,
                                selected_cell=self.selected_cell_coords,
-                               rebel_counts=self.visible_rebel_counts())
+                               rebel_counts=self.visible_rebel_counts(),
+                               outpost_construction_progress=(
+                                   self.outpost_construction_progress_map()))
 
         if self.commands.active and self.commands.cell_coords is not None:
             row, col = self.commands.cell_coords
