@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pygame
+from src.display.text_renderer import render_text
 
 
 class Popup:
@@ -41,12 +42,9 @@ class Popup:
         pygame.draw.rect(screen, (107, 178, 255), bg_rect, width=2,
                          border_radius=8)
 
-        title_font = pygame.font.SysFont(None, 34)
-        body_font = pygame.font.SysFont(None, 24)
-
-        title_surface = title_font.render(self.title, True, (255, 255, 255))
+        title_surface = render_text(self.title, 34, (255, 255, 255))
         screen.blit(title_surface, (x + 16, y + 12))
 
         for index, line in enumerate(lines):
-            text = body_font.render(line, True, (220, 230, 250))
+            text = render_text(line, 24, (220, 230, 250))
             screen.blit(text, (x + 16, y + 56 + index * 24))

@@ -8,7 +8,7 @@ from src.game.world.Map import Map
 
 class Commander:
     STARTING_MANPOWER = 10
-    REBEL_MOVE_STEP_TIME = 2.0
+    REBEL_MOVE_TIME = 1.0
     REBEL_MOVE_BATCH_SIZE = 10
 
     def __init__(self, manpower: int = STARTING_MANPOWER) -> None:
@@ -32,8 +32,7 @@ class Commander:
 
         self.manpower += amount
 
-    def find_rebel_path(self, game_map: Map,
-                        start: tuple[int, int],
+    def find_rebel_path(self, game_map: Map, start: tuple[int, int],
                         destination: tuple[int, int]
                         ) -> list[tuple[int, int]] | None:
         if start == destination:
@@ -65,8 +64,7 @@ class Commander:
                         or (next_cost, next_steps) < current_best):
                     distances[neighbor] = (next_cost, next_steps)
                     previous[neighbor] = current
-                    heapq.heappush(queue,
-                                   (next_cost, next_steps, neighbor))
+                    heapq.heappush(queue, (next_cost, next_steps, neighbor))
 
         return None
 

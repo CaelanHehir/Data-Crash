@@ -7,6 +7,7 @@ from typing import Optional
 from src.game.buildings.Datacenter import Datacenter
 from src.game.buildings.Headquarters import Headquarters
 from src.game.world.Map import Map
+from src.display.text_renderer import render_text, get_font
 
 
 class MapRenderer:
@@ -131,12 +132,10 @@ class MapRenderer:
 
         x = origin_x + col * scaled_tile
         y = origin_y + row * scaled_tile
-        return pygame.Rect(
-            int(x + scaled_margin),
-            int(y + scaled_margin),
-            int(scaled_tile - 2 * scaled_margin),
-            int(scaled_tile - 2 * scaled_margin),
-        )
+        return pygame.Rect(int(x + scaled_margin),
+                           int(y + scaled_margin),
+                           int(scaled_tile - 2 * scaled_margin),
+                           int(scaled_tile - 2 * scaled_margin))
 
     def _centered_origin(self, screen: pygame.Surface, game_map: Map,
                          zoom: float) -> tuple[float, float]:
@@ -186,9 +185,8 @@ class MapRenderer:
 
     def draw(self, screen: pygame.Surface, game_map: Map,
              selected_cell: Optional[tuple[int, int]] = None,
-             rebel_counts: Optional[
-                 dict[tuple[int, int], int]
-             ] = None) -> None:
+             rebel_counts: Optional[dict[tuple[int, int], int]] = None
+             ) -> None:
         self._update_zoom_bounds(screen, game_map)
         self.zoom = max(self.min_zoom, min(self.max_zoom, self.zoom))
         self._clamp_pan(screen, game_map)
@@ -200,12 +198,10 @@ class MapRenderer:
         # Draw cells
         for row_index, row in enumerate(game_map.grid):
             for col_index, cell in enumerate(row):
-                tile_rect = self.cell_rect(
-                    row_index,
-                    col_index,
-                    screen,
-                    game_map,
-                )
+                tile_rect = self.cell_rect(row_index,
+                                           col_index,
+                                           screen,
+                                           game_map)
 
                 color = (35, 45, 65)
                 if isinstance(cell.building, Headquarters):
@@ -216,25 +212,18 @@ class MapRenderer:
                 pygame.draw.rect(screen, color, tile_rect, border_radius=3)
 
                 if isinstance(cell.building, Headquarters):
-                    self._draw_headquarters_progress(
-                        screen,
-                        tile_rect,
-                        cell.building,
-                    )
+                    self._draw_headquarters_progress(screen,
+                                                     tile_rect,
+                                                     cell.building)
 
                 displayed_rebels = cell.rebels
                 if rebel_counts is not None:
-                    displayed_rebels = rebel_counts.get(
-                        (row_index, col_index),
-                        displayed_rebels,
-                    )
+                    displayed_rebels = rebel_counts.get((row_index, col_index),
+                                                        displayed_rebels)
 
-                self._draw_unit_counts(
-                    screen,
-                    tile_rect,
-                    rebels=displayed_rebels,
-                    robots=cell.robots,
-                )
+                self._draw_unit_counts(screen, tile_rect,
+                                       rebels=displayed_rebels,
+                                       robots=cell.robots)
 
                 if selected_cell == (row_index, col_index):
                     pygame.draw.rect(screen, (255, 255, 255),
@@ -269,88 +258,68 @@ class MapRenderer:
             progress_color = (255, 120, 120, 95)
 
         overlay = pygame.Surface(tile_rect.size, pygame.SRCALPHA)
-        local_center = (tile_rect.width // 2, tile_rect.height // 2)
+        cell_center = (tile_rect.width // 2, tile_rect.height // 2)
 
         if progress >= 1.0:
             pygame.draw.rect(overlay, progress_color, overlay.get_rect(),
                              border_radius=3)
         else:
             radius = int(math.hypot(tile_rect.width, tile_rect.height))
-            points = [local_center]
+            points = [cell_center]
             start_angle = -math.pi / 2
             end_angle = start_angle + (progress * math.tau)
             segments = max(12, int(48 * progress))
 
             for step in range(segments + 1):
-                angle = start_angle + (
-                    (end_angle - start_angle) * step / segments
-                )
-                points.append((
-                    local_center[0] + int(math.cos(angle) * radius),
-                    local_center[1] + int(math.sin(angle) * radius),
-                ))
+                angle = start_angle + ((end_angle - start_angle) *
+                                       step / segments)
+                points.append((cell_center[0] + int(math.cos(angle) * radius),
+                               cell_center[1] + int(math.sin(angle) * radius)))
 
             if len(points) >= 3:
                 pygame.draw.polygon(overlay, progress_color, points)
 
         screen.blit(overlay, tile_rect.topleft)
 
-    def _draw_unit_counts(self, screen: pygame.Surface,
-                          tile_rect: pygame.Rect,
-                          rebels: int,
-                          robots: int) -> None:
+    def _draw_unit_counts(self, screen: pygame.Surface, tile_rect: pygame.Rect,
+                          rebels: int, robots: int) -> None:
+        if not (rebels or robots):
+            return
+
         font_size = max(12, min(22, tile_rect.height // 3))
-        font = pygame.font.SysFont(None, font_size)
+        font = get_font(font_size)
 
         if rebels > 0:
-            self._draw_count_badge(
-                screen,
-                tile_rect,
-                text=str(rebels),
-                font=font,
-                text_color=(255, 255, 255),
-                badge_color=(170, 65, 65),
-                anchor="top_left",
-            )
+            self._draw_count_badge(screen, tile_rect, text=str(rebels),
+                                   font=font, text_color=(255, 255, 255),
+                                   badge_color=(170, 65, 65),
+                                   anchor="top_left")
 
         if robots > 0:
-            self._draw_count_badge(
-                screen,
-                tile_rect,
-                text=str(robots),
-                font=font,
-                text_color=(255, 255, 255),
-                badge_color=(65, 115, 180),
-                anchor="bottom_right",
-            )
+            self._draw_count_badge(screen, tile_rect, text=str(robots),
+                                   font=font, text_color=(255, 255, 255),
+                                   badge_color=(65, 115, 180),
+                                   anchor="bottom_right")
 
-    def _draw_count_badge(self, screen: pygame.Surface,
-                          tile_rect: pygame.Rect,
-                          text: str,
-                          font: pygame.font.Font,
+    def _draw_count_badge(self, screen: pygame.Surface, tile_rect: pygame.Rect,
+                          text: str, font: pygame.font.Font,
                           text_color: tuple[int, int, int],
                           badge_color: tuple[int, int, int],
                           anchor: str) -> None:
-        text_surface = font.render(text, True, text_color)
+        font_size = max(12, min(22, tile_rect.height // 3))
+        text_surface = render_text(text, font_size, text_color)
         padding_x = 6
         padding_y = 2
         badge_width = text_surface.get_width() + padding_x * 2
         badge_height = text_surface.get_height() + padding_y * 2
 
         if anchor == "top_left":
-            badge_rect = pygame.Rect(
-                tile_rect.x + 4,
-                tile_rect.y + 4,
-                badge_width,
-                badge_height,
-            )
+            badge_rect = pygame.Rect(tile_rect.x + 4, tile_rect.y + 4,
+                                     badge_width, badge_height)
         else:
-            badge_rect = pygame.Rect(
-                tile_rect.right - badge_width - 4,
-                tile_rect.bottom - badge_height - 4,
-                badge_width,
-                badge_height,
-            )
+            badge_rect = pygame.Rect(tile_rect.right - badge_width - 4,
+                                     tile_rect.bottom - badge_height - 4,
+                                     badge_width, badge_height)
 
         pygame.draw.rect(screen, badge_color, badge_rect, border_radius=8)
         pygame.draw.rect(screen, (255, 255, 255), badge_rect, width=1,

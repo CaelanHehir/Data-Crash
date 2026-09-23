@@ -8,21 +8,19 @@ from src.game.world.Cell import Cell
 
 
 def sector_names() -> list[str]:
-    return [
-        "Alpha", "Bravo", "Charlie", "Delta", "Echo",
-        "Foxtrot", "Golf", "Hotel", "India", "Juliett",
-        "Kilo", "Lima", "Mike", "November", "Oscar",
-        "Papa", "Quebec", "Romeo", "Sierra", "Tango",
-        "Uniform", "Victor", "Whiskey", "Xray", "Yankee",
-        "Zulu",
-    ]
+    return ["Alpha", "Bravo", "Charlie", "Delta", "Echo",
+            "Foxtrot", "Golf", "Hotel", "India", "Juliett",
+            "Kilo", "Lima", "Mike", "November", "Oscar",
+            "Papa", "Quebec", "Romeo", "Sierra", "Tango",
+            "Uniform", "Victor", "Whiskey", "Xray", "Yankee",
+            "Zulu"]
 
 
 class Map:
     WIDTH = 20
     HEIGHT = 20
     SECTOR_SIZE = 4
-    DATACENTER_COUNT = 5
+    DATACENTER_COUNT = 10
 
     def __init__(self) -> None:
         if (self.WIDTH % self.SECTOR_SIZE != 0 or

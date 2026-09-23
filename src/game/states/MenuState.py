@@ -2,6 +2,7 @@ from __future__ import annotations
 import pygame
 from src.game.states.State import State
 from src.game.states.PlayingState import PlayingState
+from src.display.text_renderer import get_font
 
 
 class MenuState(State):
@@ -29,8 +30,8 @@ class MenuState(State):
     def render(self, screen) -> None:
         screen.fill((18, 24, 38))
 
-        font_title = pygame.font.SysFont(None, 72)
-        font_menu = pygame.font.SysFont(None, 48)
+        font_title = get_font(72)
+        font_menu = get_font(48)
 
         title = font_title.render("Data Crash", True, (255, 255, 255))
         title_x = screen.get_width() // 2 - title.get_width() // 2

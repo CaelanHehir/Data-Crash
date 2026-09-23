@@ -9,6 +9,7 @@ import pygame
 from src.game.buildings.Headquarters import Headquarters
 from src.game.entities.Commander import Commander
 from src.game.world.Cell import Cell
+from src.display.text_renderer import get_font
 
 
 @dataclass
@@ -55,16 +56,14 @@ class Commands:
 
     def set_item(self, index: int, label: str,
                  callback: Callable[[CommandContext], None],
-                 is_available: Optional[
-                     Callable[[CommandContext], bool]
-                 ] = None
+                 available: Optional[Callable[[CommandContext], bool]] = None
                  ) -> None:
         self.items[index].label = label
         self.items[index].callback = callback
-        if is_available is None:
+        if available is None:
             self.items[index].is_available = self._always_available
         else:
-            self.items[index].is_available = is_available
+            self.items[index].is_available = available
 
     def show_at_cell(self, cell_coords: tuple[int, int],
                      cell_center: tuple[int, int], zoom: float,
@@ -133,7 +132,7 @@ class Commands:
         radius_sq = self.command_radius * self.command_radius
 
         font_size = max(16, int(self.command_radius * 1.2))
-        font = pygame.font.SysFont(None, font_size)
+        font = get_font(font_size)
         for item in self.items:
             enabled = item.is_available(self.context)
             dx = mouse_x - item.center[0]

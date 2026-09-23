@@ -6,11 +6,11 @@ from src.game.buildings.Building import Building
 class Headquarters(Building):
     MOBILIZING = "Mobilizing"
     TRAINING = "Training"
-    MOBILIZING_INTERVAL = 10.0
-    TRAINING_INTERVAL = 3.0
     MANPOWER_PER_CYCLE = 5
-    MANPOWER_COST_PER_REBEL = 1
+    MOBILIZING_INTERVAL = 10.0
+    REBEL_COST = 1
     REBELS_PER_CYCLE = 1
+    TRAINING_INTERVAL = 3.0
 
     def __init__(self, name: str) -> None:
         super().__init__(name)
@@ -60,14 +60,13 @@ class Headquarters(Building):
         if cycles == 0:
             return 0, 0
 
-        max_affordable_cycles = (
-            available_manpower // self.MANPOWER_COST_PER_REBEL
-        )
+        max_affordable_cycles = available_manpower // self.REBEL_COST
+
         completed_cycles = min(cycles, max_affordable_cycles)
         if completed_cycles == 0:
             return 0, 0
 
         self._mode_elapsed -= completed_cycles * self.TRAINING_INTERVAL
-        manpower_spent = completed_cycles * self.MANPOWER_COST_PER_REBEL
+        manpower_spent = completed_cycles * self.REBEL_COST
         rebels_trained = completed_cycles * self.REBELS_PER_CYCLE
         return -manpower_spent, rebels_trained
