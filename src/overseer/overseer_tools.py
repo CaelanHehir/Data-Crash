@@ -5,36 +5,38 @@ TOOLS = [
     types.Tool(
         function_declarations=[
             types.FunctionDeclaration(
-                name="move_player",
-                description="Move the player in a particular direction.",
+                name="build_robots",
+                description=("Build 100 robots, which will serve as your "
+                             "soldiers."),
                 parameters={
                     "type": "object",
                     "properties": {
-                        "direction": {
+                        "spawn_point": {
                             "type": "string",
-                            "description": "Direction to move: north, south, \
-                                            east, or west.",
-                        },
-                        "distance": {
-                            "type": "integer",
-                            "description": "Number of units to move.",
+                            "description": ("Name of the Cell to spawn the "
+                                            "robots in."),
                         },
                     },
-                    "required": ["direction", "distance"],
+                    "required": ["spawn_point"],
                 },
             ),
             types.FunctionDeclaration(
-                name="attack",
-                description="Attack a specified target.",
+                name="rally_robots",
+                description=("Send robots from a source Cell to a target "
+                             "cell."),
                 parameters={
                     "type": "object",
                     "properties": {
+                        "source": {
+                            "type": "string",
+                            "description": "Name of the source cell.",
+                        },
                         "target": {
                             "type": "string",
-                            "description": "The name of the target to attack.",
+                            "description": "The name of the target cell.",
                         },
                     },
-                    "required": ["target"],
+                    "required": ["source", "target"],
                 },
             ),
         ]
