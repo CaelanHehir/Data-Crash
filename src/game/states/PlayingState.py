@@ -8,6 +8,7 @@ from src.display.Popup import Popup
 from src.display.map_renderer import MapRenderer
 from src.game.buildings.Headquarters import Headquarters
 from src.game.buildings.Outpost import Outpost
+from src.game.entities.Camera import Camera
 from src.game.entities.Commander import Commander
 from src.game.world.Cell import Cell
 from src.game.world.Map import Map
@@ -39,6 +40,24 @@ class OutpostConstruction:
 
 
 class PlayingState(State):
+    BATTLE_INTERVAL_SECONDS = 0.2
+    MOVE_PREVIEW_FILL_COLOR = (120, 220, 120, 90)
+    MOVE_HOVER_OUTLINE_COLOR = (200, 220, 255)
+    MOVE_CONFIRM_FILL_COLOR = (60, 180, 75)
+    MOVE_CONFIRM_OUTLINE_COLOR = (255, 255, 255)
+    MOVE_CONFIRM_TICK_COLOR = (255, 255, 255)
+
+    HUD_PANEL_WIDTH = 220
+    HUD_PANEL_HEIGHT = 35
+    HUD_PANEL_X = 24
+    HUD_PANEL_Y = 24
+    HUD_PANEL_COLOR = (20, 26, 42)
+    HUD_PANEL_BORDER_COLOR = (255, 255, 255)
+    HUD_TEXT_COLOR = (220, 230, 250)
+    HUD_TITLE_FONT_SIZE = 32
+    HUD_TEXT_OFFSET_X = 14
+    HUD_TEXT_OFFSET_Y = 10
+
     def __init__(self, game) -> None:
         super().__init__(game)
         self.overseer = Overseer()
@@ -46,41 +65,40 @@ class PlayingState(State):
         self.game_map = Map()
         self.commander = Commander()
         self.map_renderer = MapRenderer()
+        self.camera = Camera(self.map_renderer)
         self.commands = Commands()
         self.popup = Popup()
         self.selected_cell: Optional[Cell] = None
         self.selected_cell_coords: Optional[tuple[int, int]] = None
-        self._left_mouse_down_pos: Optional[tuple[int, int]] = None
-        self._left_mouse_dragged = False
-        self._drag_threshold = 5
         self._commands_consumed_click = False
         self.move_selection: Optional[MoveSelection] = None
         self.active_rebel_moves: list[RebelMoveBatch] = []
         self.active_outpost_constructions: dict[tuple[int, int],
                                                 OutpostConstruction] = {}
+        self._battle_elapsed = 0.0
 
     def enter(self) -> None:
         # Reset/initialize a fresh run here (entities, score, etc.)
         self.game_map = Map()
         self.commander = Commander()
+        self.camera.reset()
         self.selected_cell = None
         self.selected_cell_coords = None
-        self._left_mouse_down_pos = None
-        self._left_mouse_dragged = False
         self._commands_consumed_click = False
         self.move_selection = None
         self.active_rebel_moves = []
         self.active_outpost_constructions = {}
+        self._battle_elapsed = 0.0
         self.commands.hide()
         self.popup.hide()
 
     def handle_event(self, event) -> None:
         if event.type == pygame.MOUSEWHEEL:
             mouse_pos = pygame.mouse.get_pos()
-            self.map_renderer.zoom_at(event.y,
-                                      mouse_pos,
-                                      self.game.screen,
-                                      self.game_map)
+            self.camera.zoom_at(event.y,
+                                mouse_pos,
+                                self.game.screen,
+                                self.game_map)
 
             if self.move_selection is not None:
                 self.update_move_hover(mouse_pos)
@@ -88,47 +106,27 @@ class PlayingState(State):
 
         if self.move_selection is not None:
             if event.type == pygame.MOUSEMOTION:
-                if event.buttons[0]:
-                    if self._left_mouse_down_pos is not None:
-                        delta_x = abs(event.pos[0]
-                                      - self._left_mouse_down_pos[0])
-                        delta_y = abs(event.pos[1]
-                                      - self._left_mouse_down_pos[1])
-                        if (delta_x >= self._drag_threshold
-                                or delta_y >= self._drag_threshold):
-                            self._left_mouse_dragged = True
-
-                    self.map_renderer.pan_to(event.pos,
-                                             self.game.screen,
-                                             self.game_map)
+                self.camera.handle_mouse_motion(event.pos,
+                                                bool(event.buttons[0]),
+                                                self.game.screen,
+                                                self.game_map)
 
                 self.update_move_hover(event.pos)
                 return
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    self._left_mouse_down_pos = event.pos
-                    self._left_mouse_dragged = False
-                    self.map_renderer.start_pan(event.pos)
+                    self.camera.handle_left_button_down(event.pos)
                 elif event.button == 3:
-                    self.map_renderer.stop_pan()
-                    self._left_mouse_down_pos = None
-                    self._left_mouse_dragged = False
+                    self.camera.cancel_pan_tracking()
                     self.cancel_rebel_move_mode()
                 return
             if event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:
-                    self.map_renderer.stop_pan()
-                    if (self._left_mouse_down_pos is not None
-                            and not self._left_mouse_dragged):
+                    if self.camera.handle_left_button_up():
                         self.handle_move_selection_click(event.pos)
-
-                    self._left_mouse_down_pos = None
-                    self._left_mouse_dragged = False
                 return
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                self.map_renderer.stop_pan()
-                self._left_mouse_down_pos = None
-                self._left_mouse_dragged = False
+                self.camera.cancel_pan_tracking()
                 self.cancel_rebel_move_mode()
                 return
 
@@ -136,39 +134,27 @@ class PlayingState(State):
             if event.button == 1:
                 if self.commands.click(event.pos):
                     self._commands_consumed_click = True
-                    self._left_mouse_down_pos = None
-                    self._left_mouse_dragged = False
+                    self.camera.cancel_pan_tracking()
                     return
 
-                self._left_mouse_down_pos = event.pos
-                self._left_mouse_dragged = False
-                self.map_renderer.start_pan(event.pos)
+                self.camera.handle_left_button_down(event.pos)
             elif event.button == 3:
                 self.select_cell(event.pos, toggle=False)
                 self.show_commands(event.pos)
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1:
-                self.map_renderer.stop_pan()
+                was_click = self.camera.handle_left_button_up()
                 if self._commands_consumed_click:
                     self._commands_consumed_click = False
                     return
 
-                if (self._left_mouse_down_pos is not None
-                        and not self._left_mouse_dragged):
+                if was_click:
                     self.select_cell(event.pos)
-                self._left_mouse_down_pos = None
-                self._left_mouse_dragged = False
         elif event.type == pygame.MOUSEMOTION:
-            if event.buttons[0]:
-                if self._left_mouse_down_pos is not None:
-                    delta_x = abs(event.pos[0] - self._left_mouse_down_pos[0])
-                    delta_y = abs(event.pos[1] - self._left_mouse_down_pos[1])
-                    if (delta_x >= self._drag_threshold
-                            or delta_y >= self._drag_threshold):
-                        self._left_mouse_dragged = True
-
-                self.map_renderer.pan_to(event.pos, self.game.screen,
-                                         self.game_map)
+            self.camera.handle_mouse_motion(event.pos,
+                                            bool(event.buttons[0]),
+                                            self.game.screen,
+                                            self.game_map)
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 from src.game.states.MenuState import MenuState
@@ -240,7 +226,7 @@ class PlayingState(State):
                                                self.game_map)
         context = self.command_context_for_cell(selected)
         self.commands.show_at_cell(selected, center,
-                                   self.map_renderer.zoom, context)
+                                   self.camera.zoom, context)
 
     def command_context_for_cell(self, cell_coords: tuple[int, int]
                                  ) -> CommandContext:
@@ -424,7 +410,7 @@ class PlayingState(State):
 
     def move_confirmation_radius(self) -> int:
         scaled_radius = (self.map_renderer.base_tile_size *
-                         self.map_renderer.zoom * 0.2)
+                         self.camera.zoom * 0.275)
         return max(10, int(scaled_radius))
 
     def confirm_rebel_move(self) -> None:
@@ -512,6 +498,7 @@ class PlayingState(State):
         self.update_headquarters(dt)
         self.update_outpost_constructions(dt)
         self.update_rebel_moves(dt)
+        self.update_battles(dt)
 
         result = self.overseer.poll()
         if result is not None:
@@ -522,7 +509,16 @@ class PlayingState(State):
             else:
                 print(f"LLM call failed: {payload}")
 
-        self.clear_battle_flags()
+    def update_battles(self, dt: float) -> None:
+        if dt < 0:
+            raise ValueError("dt cannot be negative")
+
+        self._battle_elapsed += dt
+        while self._battle_elapsed >= self.BATTLE_INTERVAL_SECONDS:
+            self._battle_elapsed -= self.BATTLE_INTERVAL_SECONDS
+            for row in self.game_map.grid:
+                for cell in row:
+                    cell.battle()
 
     def update_outpost_constructions(self, dt: float) -> None:
         if dt < 0:
@@ -537,7 +533,7 @@ class PlayingState(State):
             row, col = cell_coords
             cell = self.game_map.grid[row][col]
 
-            if cell.battle_occurred:
+            if cell.battle_occurring:
                 interrupted_cells.append(cell_coords)
             else:
                 build_rate = self.outpost_build_rate_multiplier(cell_coords)
@@ -561,11 +557,6 @@ class PlayingState(State):
             selected_coords = self.selected_cell_coords
             if selected_coords is not None:
                 self.update_popup_for_cell(selected_coords, self.selected_cell)
-
-    def clear_battle_flags(self) -> None:
-        for row in self.game_map.grid:
-            for cell in row:
-                cell.clear_battle_flag()
 
     def update_headquarters(self, dt: float) -> None:
         selected_changed = False
@@ -649,7 +640,7 @@ class PlayingState(State):
                                                    self.game.screen,
                                                    self.game_map)
 
-            self.commands.update_transform(center, self.map_renderer.zoom)
+            self.commands.update_transform(center, self.camera.zoom)
 
         self.draw_move_preview(screen)
         self.draw_commander_hud(screen)
@@ -671,7 +662,7 @@ class PlayingState(State):
                                                         self.game_map)
 
                 overlay = pygame.Surface(cell_rect.size, pygame.SRCALPHA)
-                pygame.draw.rect(overlay, (120, 220, 120, 90),
+                pygame.draw.rect(overlay, self.MOVE_PREVIEW_FILL_COLOR,
                                  overlay.get_rect(), border_radius=3)
                 screen.blit(overlay, cell_rect.topleft)
 
@@ -682,7 +673,8 @@ class PlayingState(State):
                                                      self.game.screen,
                                                      self.game_map)
 
-            pygame.draw.rect(screen, (200, 220, 255), hover_rect, width=2,
+            pygame.draw.rect(screen, self.MOVE_HOVER_OUTLINE_COLOR,
+                             hover_rect, width=2,
                              border_radius=3)
 
         destination_coords = self.move_selection.destination_coords
@@ -693,8 +685,10 @@ class PlayingState(State):
                                                    self.game_map)
 
             radius = self.move_confirmation_radius()
-            pygame.draw.circle(screen, (60, 180, 75), center, radius)
-            pygame.draw.circle(screen, (255, 255, 255), center, radius,
+            pygame.draw.circle(screen, self.MOVE_CONFIRM_FILL_COLOR,
+                               center, radius)
+            pygame.draw.circle(screen, self.MOVE_CONFIRM_OUTLINE_COLOR,
+                               center, radius,
                                width=1)
             self._draw_confirmation_tick(screen, center, radius)
 
@@ -705,27 +699,35 @@ class PlayingState(State):
         middle = (center[0] - radius // 8, center[1] + radius // 2)
         right = (center[0] + radius // 2, center[1] - radius // 3)
         line_width = max(2, radius // 5)
-        pygame.draw.line(screen, (255, 255, 255), left, middle, line_width)
-        pygame.draw.line(screen, (255, 255, 255), middle, right, line_width)
+        pygame.draw.line(screen, self.MOVE_CONFIRM_TICK_COLOR, left,
+                         middle, line_width)
+        pygame.draw.line(screen, self.MOVE_CONFIRM_TICK_COLOR, middle,
+                         right, line_width)
 
     def draw_commander_hud(self, screen: pygame.Surface) -> None:
-        width = 220
-        height = 35
-        x = 24
-        y = 24
-
-        panel_rect = pygame.Rect(x, y, width, height)
-        pygame.draw.rect(screen, (20, 26, 42), panel_rect, border_radius=8)
-        pygame.draw.rect(screen, (255, 255, 255), panel_rect, width=1,
+        panel_rect = pygame.Rect(self.HUD_PANEL_X,
+                                 self.HUD_PANEL_Y,
+                                 self.HUD_PANEL_WIDTH,
+                                 self.HUD_PANEL_HEIGHT)
+        pygame.draw.rect(screen,
+                         self.HUD_PANEL_COLOR,
+                         panel_rect,
+                         border_radius=8)
+        pygame.draw.rect(screen,
+                         self.HUD_PANEL_BORDER_COLOR,
+                         panel_rect,
+                         width=1,
                          border_radius=8)
 
-        title_font = get_font(32)
+        title_font = get_font(self.HUD_TITLE_FONT_SIZE)
 
         title_surface = title_font.render("Manpower: "
                                           f"{self.commander.manpower}",
-                                          True, (220, 230, 250))
+                                          True, self.HUD_TEXT_COLOR)
 
-        screen.blit(title_surface, (x + 14, y + 10))
+        screen.blit(title_surface,
+                    (self.HUD_PANEL_X + self.HUD_TEXT_OFFSET_X,
+                     self.HUD_PANEL_Y + self.HUD_TEXT_OFFSET_Y))
 
     def build_prompt(self) -> str:
         return ("Choose one tool call for this turn. "

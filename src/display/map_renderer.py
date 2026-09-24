@@ -10,6 +10,29 @@ from src.display.text_renderer import render_text, get_font
 
 
 class MapRenderer:
+    TILE_BORDER_RADIUS = 3
+    SELECTED_INFLATE = 4
+    SELECTED_BORDER_WIDTH = 2
+    SELECTED_BORDER_RADIUS = 4
+    SELECTED_BORDER_COLOR = (255, 255, 255)
+
+    SECTOR_OUTLINE_COLOR = (150, 150, 150)
+    SECTOR_OUTLINE_WIDTH = 1
+
+    HQ_MOBILIZING_PROGRESS_COLOR = (107, 178, 255, 95)
+    HQ_FORTIFYING_PROGRESS_COLOR = (255, 120, 120, 95)
+    OUTPOST_PROGRESS_COLOR = (180, 130, 255, 115)
+
+    REBEL_BADGE_TEXT_COLOR = (255, 255, 255)
+    ROBOT_BADGE_TEXT_COLOR = (255, 255, 255)
+    REBEL_BADGE_COLOR = (170, 65, 65)
+    ROBOT_BADGE_COLOR = (65, 115, 180)
+    BADGE_BORDER_COLOR = (255, 255, 255)
+    BADGE_PADDING_X = 6
+    BADGE_PADDING_Y = 2
+    BADGE_OFFSET = 4
+    BADGE_BORDER_RADIUS = 8
+
     def __init__(self, tile_size: int = 40, margin: int = 2) -> None:
         self.base_tile_size = tile_size
         self.margin = margin
@@ -206,7 +229,10 @@ class MapRenderer:
 
                 color = cell.color
 
-                pygame.draw.rect(screen, color, tile_rect, border_radius=3)
+                pygame.draw.rect(screen,
+                                 color,
+                                 tile_rect,
+                                 border_radius=self.TILE_BORDER_RADIUS)
 
                 if outpost_construction_progress is not None:
                     progress = outpost_construction_progress.get((row_index,
@@ -230,15 +256,21 @@ class MapRenderer:
                                        rebels=displayed_rebels,
                                        robots=cell.robots)
 
+                pygame.draw.rect(screen, cell.outline_color,
+                                 tile_rect, width=2,
+                                 border_radius=self.TILE_BORDER_RADIUS)
+
                 if selected_cell == (row_index, col_index):
-                    pygame.draw.rect(screen, (255, 255, 255),
-                                     tile_rect, width=2)
+                    selected_rect = tile_rect.inflate(self.SELECTED_INFLATE,
+                                                      self.SELECTED_INFLATE)
+                    pygame.draw.rect(screen,
+                                     self.SELECTED_BORDER_COLOR,
+                                     selected_rect,
+                                     width=self.SELECTED_BORDER_WIDTH,
+                                     border_radius=self.SELECTED_BORDER_RADIUS)
 
         # Draw sector outlines
         sector_size = game_map.SECTOR_SIZE
-        outline_color = (150, 150, 150)
-        outline_width = 1
-
         for sector_row in range(0, game_map.HEIGHT, sector_size):
             for sector_col in range(0, game_map.WIDTH, sector_size):
                 sector_x = origin_x + sector_col * scaled_tile + scaled_margin
@@ -247,8 +279,10 @@ class MapRenderer:
                                   2 * scaled_margin))
                 sector_rect = pygame.Rect(int(sector_x), int(sector_y),
                                           side_length, side_length)
-                pygame.draw.rect(screen, outline_color, sector_rect,
-                                 width=outline_width)
+                pygame.draw.rect(screen,
+                                 self.SECTOR_OUTLINE_COLOR,
+                                 sector_rect,
+                                 width=self.SECTOR_OUTLINE_WIDTH)
 
     def _draw_headquarters_progress(self, screen: pygame.Surface,
                                     tile_rect: pygame.Rect,
@@ -258,9 +292,9 @@ class MapRenderer:
             return
 
         if headquarters.mode == Headquarters.MOBILIZING:
-            progress_color = (107, 178, 255, 95)
+            progress_color = self.HQ_MOBILIZING_PROGRESS_COLOR
         else:
-            progress_color = (255, 120, 120, 95)
+            progress_color = self.HQ_FORTIFYING_PROGRESS_COLOR
 
         self._draw_radial_progress(screen, tile_rect, progress, progress_color)
 
@@ -270,7 +304,7 @@ class MapRenderer:
         if progress <= 0:
             return
 
-        progress_color = (180, 130, 255, 115)
+        progress_color = self.OUTPOST_PROGRESS_COLOR
         self._draw_radial_progress(screen, tile_rect, progress, progress_color)
 
     def _draw_radial_progress(self, screen: pygame.Surface,
@@ -315,14 +349,16 @@ class MapRenderer:
 
         if rebels > 0:
             self._draw_count_badge(screen, tile_rect, text=str(rebels),
-                                   font=font, text_color=(255, 255, 255),
-                                   badge_color=(170, 65, 65),
+                                   font=font,
+                                   text_color=self.REBEL_BADGE_TEXT_COLOR,
+                                   badge_color=self.REBEL_BADGE_COLOR,
                                    anchor="top_left")
 
         if robots > 0:
             self._draw_count_badge(screen, tile_rect, text=str(robots),
-                                   font=font, text_color=(255, 255, 255),
-                                   badge_color=(65, 115, 180),
+                                   font=font,
+                                   text_color=self.ROBOT_BADGE_TEXT_COLOR,
+                                   badge_color=self.ROBOT_BADGE_COLOR,
                                    anchor="bottom_right")
 
     def _draw_count_badge(self, screen: pygame.Surface, tile_rect: pygame.Rect,
@@ -332,22 +368,29 @@ class MapRenderer:
                           anchor: str) -> None:
         font_size = max(12, min(22, tile_rect.height // 3))
         text_surface = render_text(text, font_size, text_color)
-        padding_x = 6
-        padding_y = 2
-        badge_width = text_surface.get_width() + padding_x * 2
-        badge_height = text_surface.get_height() + padding_y * 2
+        badge_width = text_surface.get_width() + self.BADGE_PADDING_X * 2
+        badge_height = text_surface.get_height() + self.BADGE_PADDING_Y * 2
 
         if anchor == "top_left":
-            badge_rect = pygame.Rect(tile_rect.x + 4, tile_rect.y + 4,
+            badge_rect = pygame.Rect(tile_rect.x + self.BADGE_OFFSET,
+                                     tile_rect.y + self.BADGE_OFFSET,
                                      badge_width, badge_height)
         else:
-            badge_rect = pygame.Rect(tile_rect.right - badge_width - 4,
-                                     tile_rect.bottom - badge_height - 4,
+            badge_rect = pygame.Rect(tile_rect.right - badge_width
+                                     - self.BADGE_OFFSET,
+                                     tile_rect.bottom - badge_height
+                                     - self.BADGE_OFFSET,
                                      badge_width, badge_height)
 
-        pygame.draw.rect(screen, badge_color, badge_rect, border_radius=8)
-        pygame.draw.rect(screen, (255, 255, 255), badge_rect, width=1,
-                         border_radius=8)
+        pygame.draw.rect(screen,
+                         badge_color,
+                         badge_rect,
+                         border_radius=self.BADGE_BORDER_RADIUS)
+        pygame.draw.rect(screen,
+                         self.BADGE_BORDER_COLOR,
+                         badge_rect,
+                         width=1,
+                         border_radius=self.BADGE_BORDER_RADIUS)
 
         text_rect = text_surface.get_rect(center=badge_rect.center)
         screen.blit(text_surface, text_rect)
