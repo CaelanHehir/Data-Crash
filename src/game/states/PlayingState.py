@@ -18,23 +18,6 @@ from src.display.text_renderer import get_font
 
 
 @dataclass
-class MoveSelection:
-    source_coords: tuple[int, int]
-    hovered_coords: Optional[tuple[int, int]] = None
-    preview_path: Optional[list[tuple[int, int]]] = None
-    destination_coords: Optional[tuple[int, int]] = None
-    path: Optional[list[tuple[int, int]]] = None
-
-
-@dataclass
-class RebelMoveBatch:
-    path: list[tuple[int, int]]
-    rebels: int
-    current_index: int = 0
-    time_until_advance: float = 0.0
-
-
-@dataclass
 class OutpostConstruction:
     elapsed: float = 0.0
 
@@ -71,8 +54,6 @@ class PlayingState(State):
         self.selected_cell: Optional[Cell] = None
         self.selected_cell_coords: Optional[tuple[int, int]] = None
         self._commands_consumed_click = False
-        self.move_selection: Optional[MoveSelection] = None
-        self.active_rebel_moves: list[RebelMoveBatch] = []
         self.active_outpost_constructions: dict[tuple[int, int],
                                                 OutpostConstruction] = {}
         self._battle_elapsed = 0.0
@@ -85,8 +66,7 @@ class PlayingState(State):
         self.selected_cell = None
         self.selected_cell_coords = None
         self._commands_consumed_click = False
-        self.move_selection = None
-        self.active_rebel_moves = []
+        self.commander.reset_movement_state()
         self.active_outpost_constructions = {}
         self._battle_elapsed = 0.0
         self.commands.hide()
@@ -100,11 +80,11 @@ class PlayingState(State):
                                 self.game.screen,
                                 self.game_map)
 
-            if self.move_selection is not None:
+            if self.commander.move_selection is not None:
                 self.update_move_hover(mouse_pos)
             return
 
-        if self.move_selection is not None:
+        if self.commander.move_selection is not None:
             if event.type == pygame.MOUSEMOTION:
                 self.camera.handle_mouse_motion(event.pos,
                                                 bool(event.buttons[0]),
@@ -308,60 +288,30 @@ class PlayingState(State):
                 for cell_coords in self.active_outpost_constructions}
 
     def start_rebel_move_mode(self, source_coords: tuple[int, int]) -> None:
-        if self.visible_rebel_count(source_coords) <= 0:
+        started = self.commander.start_rebel_move_mode(self.game_map,
+                                                       source_coords)
+        if not started:
             return
 
-        self.move_selection = MoveSelection(source_coords=source_coords)
         self.update_move_hover(pygame.mouse.get_pos())
 
     def cancel_rebel_move_mode(self) -> None:
-        self.move_selection = None
-
-    def rebel_batches_at(self,
-                         cell_coords: tuple[int, int]) -> list[RebelMoveBatch]:
-        return [batch for batch in self.active_rebel_moves
-                if batch.path[batch.current_index] == cell_coords]
+        self.commander.cancel_rebel_move_mode()
 
     def visible_rebel_count(self, cell_coords: tuple[int, int]) -> int:
-        row, col = cell_coords
-        total_rebels = self.game_map.grid[row][col].rebels
-        for batch in self.rebel_batches_at(cell_coords):
-            total_rebels += batch.rebels
-
-        return total_rebels
+        return self.commander.visible_rebel_count(self.game_map, cell_coords)
 
     def visible_rebel_counts(self) -> dict[tuple[int, int], int]:
-        rebel_counts = {(row_index, col_index): cell.rebels
-                        for row_index, row in enumerate(self.game_map.grid)
-                        for col_index, cell in enumerate(row)}
-
-        for batch in self.active_rebel_moves:
-            coords = batch.path[batch.current_index]
-            rebel_counts[coords] = rebel_counts.get(coords, 0) + batch.rebels
-
-        return rebel_counts
+        return self.commander.visible_rebel_counts(self.game_map)
 
     def update_move_hover(self, mouse_pos: tuple[int, int]) -> None:
-        if self.move_selection is None:
-            return
-
         hovered_coords = self.map_renderer.pick_cell(mouse_pos,
                                                      self.game.screen,
                                                      self.game_map)
-
-        self.move_selection.hovered_coords = hovered_coords
-
-        if hovered_coords is None:
-            self.move_selection.preview_path = None
-            return
-
-        self.move_selection.preview_path = self.commander.find_rebel_path(
-            self.game_map,
-            self.move_selection.source_coords,
-            hovered_coords)
+        self.commander.update_move_hover(self.game_map, hovered_coords)
 
     def handle_move_selection_click(self, mouse_pos: tuple[int, int]) -> None:
-        if self.move_selection is None:
+        if self.commander.move_selection is None:
             return
 
         if self._move_confirmation_hit(mouse_pos):
@@ -378,26 +328,18 @@ class PlayingState(State):
         self.set_move_destination(selected)
 
     def set_move_destination(self, dest_coords: tuple[int, int]) -> None:
-        if self.move_selection is None:
-            return
-
-        source_coords = self.move_selection.source_coords
-        path = self.commander.find_rebel_path(self.game_map,
-                                              source_coords,
-                                              dest_coords)
-        self.move_selection.destination_coords = dest_coords
-        self.move_selection.path = path
-        self.move_selection.preview_path = path
+        self.commander.set_move_destination(self.game_map, dest_coords)
 
     def _move_confirmation_hit(self, mouse_pos: tuple[int, int]) -> bool:
-        if self.move_selection is None:
+        move_selection = self.commander.move_selection
+        if move_selection is None:
             return False
-        if self.move_selection.destination_coords is None:
+        if move_selection.destination_coords is None:
             return False
-        if not self.move_selection.path:
+        if not move_selection.path:
             return False
 
-        row, col = self.move_selection.destination_coords
+        row, col = move_selection.destination_coords
         center_x, center_y = self.map_renderer.cell_center(row,
                                                            col,
                                                            self.game.screen,
@@ -414,63 +356,14 @@ class PlayingState(State):
         return max(10, int(scaled_radius))
 
     def confirm_rebel_move(self) -> None:
-        if self.move_selection is None or not self.move_selection.path:
+        moved, source_coords = self.commander.confirm_rebel_move(self.game_map)
+        if not moved or source_coords is None:
             return
 
-        source_coords = self.move_selection.source_coords
         source_row, source_col = source_coords
-        destination_coords = self.move_selection.destination_coords
         source_cell = self.game_map.grid[source_row][source_col]
-        rebels_to_move = self.visible_rebel_count(source_coords)
-        path_edges = len(self.move_selection.path) - 1
-        invalid_move = (rebels_to_move <= 0 or path_edges <= 0
-                        or destination_coords is None)
-
-        if invalid_move:
-            self.cancel_rebel_move_mode()
-            return
-
-        self.redirect_rebel_moves(source_coords, self.move_selection.path)
-
-        stationed_rebels = source_cell.rebels
-        if stationed_rebels > 0:
-            source_cell.remove_rebels(stationed_rebels)
-            self.create_rebel_batches(self.move_selection.path,
-                                      stationed_rebels)
-
         if self.selected_cell_coords == source_coords:
             self.update_popup_for_cell(source_coords, source_cell)
-
-        self.cancel_rebel_move_mode()
-
-    def create_rebel_batches(self, path: list[tuple[int, int]],
-                             rebels_to_move: int) -> None:
-        remaining_rebels = rebels_to_move
-        batch_index = 0
-        while remaining_rebels > 0:
-            batch_size = min(remaining_rebels,
-                             self.commander.REBEL_MOVE_BATCH_SIZE)
-
-            remaining_rebels -= batch_size
-            self.active_rebel_moves.append(RebelMoveBatch(
-                path=list(path),
-                rebels=batch_size,
-                current_index=0,
-                time_until_advance=(batch_index + 1)
-                * self.commander.REBEL_MOVE_TIME,
-            ))
-            batch_index += 1
-
-    def redirect_rebel_moves(self, source_coords: tuple[int, int],
-                             path: list[tuple[int, int]]) -> None:
-        for batch in self.rebel_batches_at(source_coords):
-            preserved_delay = batch.time_until_advance
-            batch.path = list(path)
-            batch.current_index = 0
-            if preserved_delay > 0:
-                batch.time_until_advance = preserved_delay
-            else:
-                batch.time_until_advance = self.commander.REBEL_MOVE_TIME
 
     def toggle_headquarters_mode(self, cell_coords: tuple[int, int]) -> None:
         row, col = cell_coords
@@ -588,37 +481,9 @@ class PlayingState(State):
                 self.update_popup_for_cell(selected_coords, self.selected_cell)
 
     def update_rebel_moves(self, dt: float) -> None:
-        if dt < 0:
-            raise ValueError("dt cannot be negative")
-
-        selected_changed = False
-        remaining_moves: list[RebelMoveBatch] = []
-        for move in self.active_rebel_moves:
-            move.time_until_advance -= dt
-
-            while move.time_until_advance <= 0:
-                if move.current_index >= len(move.path) - 1:
-                    break
-
-                current_row, current_col = move.path[move.current_index]
-                next_row, next_col = move.path[move.current_index + 1]
-                move.current_index += 1
-
-                if move.current_index == len(move.path) - 1:
-                    destination_cell = self.game_map.grid[next_row][next_col]
-                    destination_cell.add_rebels(move.rebels)
-                else:
-                    move.time_until_advance += self.commander.REBEL_MOVE_TIME
-
-                if self.selected_cell_coords in {(current_row, current_col),
-                                                 (next_row, next_col)}:
-                    selected_changed = True
-
-            if move.current_index < len(move.path) - 1:
-                remaining_moves.append(move)
-
-        self.active_rebel_moves = remaining_moves
-        if selected_changed and self.selected_cell is not None:
+        changed_cells = self.commander.update_rebel_moves(self.game_map, dt)
+        if (self.selected_cell_coords in changed_cells
+                and self.selected_cell is not None):
             selected_coords = self.selected_cell_coords
             if selected_coords is not None:
                 self.update_popup_for_cell(selected_coords, self.selected_cell)
@@ -648,12 +513,13 @@ class PlayingState(State):
         self.popup.draw(screen)
 
     def draw_move_preview(self, screen: pygame.Surface) -> None:
-        if self.move_selection is None:
+        move_selection = self.commander.move_selection
+        if move_selection is None:
             return
 
-        path_to_draw = self.move_selection.path
+        path_to_draw = move_selection.path
         if path_to_draw is None:
-            path_to_draw = self.move_selection.preview_path
+            path_to_draw = move_selection.preview_path
 
         if path_to_draw is not None:
             for row, col in path_to_draw[1:]:
@@ -666,7 +532,7 @@ class PlayingState(State):
                                  overlay.get_rect(), border_radius=3)
                 screen.blit(overlay, cell_rect.topleft)
 
-        highlight_coords = self.move_selection.hovered_coords
+        highlight_coords = move_selection.hovered_coords
         if highlight_coords is not None:
             row, col = highlight_coords
             hover_rect = self.map_renderer.cell_rect(row, col,
@@ -677,8 +543,8 @@ class PlayingState(State):
                              hover_rect, width=2,
                              border_radius=3)
 
-        destination_coords = self.move_selection.destination_coords
-        if destination_coords is not None and self.move_selection.path:
+        destination_coords = move_selection.destination_coords
+        if destination_coords is not None and move_selection.path:
             row, col = destination_coords
             center = self.map_renderer.cell_center(row, col,
                                                    self.game.screen,
