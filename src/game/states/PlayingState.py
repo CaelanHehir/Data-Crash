@@ -406,12 +406,34 @@ class PlayingState(State):
         if dt < 0:
             raise ValueError("dt cannot be negative")
 
+        selected_coords = self.selected_cell_coords
+        selected_snapshot: Optional[tuple[int, int, bool]] = None
+        if selected_coords is not None:
+            row, col = selected_coords
+            selected_cell = self.game_map.grid[row][col]
+            selected_snapshot = (self.visible_rebel_count(selected_coords),
+                                 selected_cell.robots,
+                                 selected_cell.battle_occurring)
+
         self._battle_elapsed += dt
         while self._battle_elapsed >= self.BATTLE_INTERVAL_SECONDS:
             self._battle_elapsed -= self.BATTLE_INTERVAL_SECONDS
             for row in self.game_map.grid:
                 for cell in row:
                     cell.battle()
+
+        if selected_coords is None or selected_snapshot is None:
+            return
+        if self.selected_cell is None:
+            return
+
+        row, col = selected_coords
+        selected_cell = self.game_map.grid[row][col]
+        updated_snapshot = (self.visible_rebel_count(selected_coords),
+                            selected_cell.robots,
+                            selected_cell.battle_occurring)
+        if updated_snapshot != selected_snapshot:
+            self.update_popup_for_cell(selected_coords, selected_cell)
 
     def update_outpost_constructions(self, dt: float) -> None:
         if dt < 0:

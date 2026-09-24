@@ -27,7 +27,7 @@ class RebelMoveBatch:
 
 class Commander:
     STARTING_MANPOWER = 100
-    REBEL_MOVE_TIME = 2.0
+    REBEL_MOVE_TIME = 0.5
     REBEL_MOVE_BATCH_SIZE = 500
 
     def __init__(self, manpower: int = STARTING_MANPOWER) -> None:

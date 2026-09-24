@@ -80,6 +80,6 @@ class Map:
 
         headquarters_cell.set_building(Headquarters(name="Headquarters"))
 
-        for index, cell in enumerate(datacenter_cells, start=1):
-            cell.set_building(Datacenter(name=f"Datacenter{index}"))
+        for cell in datacenter_cells:
+            cell.set_building(Datacenter(name=f"{cell.sector} Datacenter"))
             cell.add_robots(150)
