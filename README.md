@@ -6,5 +6,7 @@ The program starts a new thread to make requests to an LLM (currently gemini 3.5
 
 # TODO:
 Add remaining command: repair building.
-Improve context sent to overseer (building durability, etc)
-Generate logs when events occur, and send them to the model, instead of having the model compare two gamestates
+
+Improve context sent to overseer (building durability, etc).
+
+Generate logs when events occur, and send them to the model, instead of having the model compare two gamestates.
