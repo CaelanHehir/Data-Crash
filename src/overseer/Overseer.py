@@ -64,9 +64,11 @@ class Overseer:
             "action. You can either build 100 robots in one of your "
             "controlled databases, or move a group of robots to another "
             "location on the map.\n"
+            "- Building robots in a datacenter is permitted even if there is"
+            "an active combat within said datacenter.\n"
             "- Rebels and robots occupying the same cell will automatically "
-            "attack each other. The side with a larger number of troops is "
-            "much more likely to win the battle.\n"
+            "attack each other. Therefore, you do not need to manually direct "
+            "robots to attack rebels residing in the same cell.\n"
             "- Avoid attacking enemy rebels unless you have a larger group of "
             "robots to attack them with.\n"
             "- You can combine two separate groups of robots by moving them "
@@ -83,8 +85,7 @@ class Overseer:
             "Compare the previous map state to the current map state "
             "below. Summarize what meaningfully changed in one or two "
             "short lines (e.g. units lost/gained, territory taken, "
-            "new threats). If nothing relevant changed, respond with "
-            "exactly: NONE.\n\n"
+            "new threats, player attacked a database).\n"
             "Previous map state:\n{previous}\n\n"
             "Current map state:\n{current}")
 
