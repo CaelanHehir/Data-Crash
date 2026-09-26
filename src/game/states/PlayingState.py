@@ -6,6 +6,7 @@ from typing import Optional
 from src.display.Commands import CommandContext, Commands
 from src.display.Popup import Popup
 from src.display.map_renderer import MapRenderer
+from src.game.buildings.Datacenter import Datacenter
 from src.game.buildings.Headquarters import Headquarters
 from src.game.buildings.Outpost import Outpost
 from src.game.entities.Camera import Camera
@@ -380,12 +381,57 @@ class PlayingState(State):
             print("Overseer request already running...")
             return
 
-        started = self.overseer.request(self.build_prompt())
+        started = self.overseer.request(self.build_context())
         if started:
             self._waiting_for_overseer = True
             print("Calling Overseer...")
         else:
             print("Overseer request already running...")
+
+    def build_context(self) -> str:
+        datacenter_cells: list[str] = []
+        headquarters_cell: str = ""
+        outpost_cells: list[str] = []
+        forces_cells: list[str] = []
+
+        for row_index, row in enumerate(self.game_map.grid):
+            for col_index, cell in enumerate(row):
+                cell_ref = (f"{cell.sector}{cell.id:02d} "
+                            f"({row_index}, {col_index})")
+
+                if isinstance(cell.building, Datacenter):
+                    datacenter_cells.append(cell_ref)
+
+                if isinstance(cell.building, (Headquarters)):
+                    headquarters_cell = cell_ref
+
+                if isinstance(cell.building, (Outpost)):
+                    outpost_cells.append(f"{cell_ref}")
+
+                rebels = self.visible_rebel_count((row_index, col_index))
+                robots = cell.robots
+                if rebels > 0 or robots > 0:
+                    forces_cells.append(
+                        f"{cell_ref}: rebels={rebels}, robots={robots}")
+
+        lines = []
+
+        lines.append("Your Datacenters:")
+        lines.extend(datacenter_cells or ["none"])
+
+        lines.append("")
+        lines.append("Enemy Headquarters:")
+        lines.append(headquarters_cell or "none")
+
+        lines.append("")
+        lines.append("Enemy Outposts:")
+        lines.extend(outpost_cells or ["none"])
+
+        lines.append("")
+        lines.append("Cells with rebels or robots:")
+        lines.extend(forces_cells or ["none"])
+
+        return "\n".join(lines)
 
     def update(self, dt: float) -> None:
         self.update_headquarters(dt)
@@ -617,12 +663,8 @@ class PlayingState(State):
                     (self.HUD_PANEL_X + self.HUD_TEXT_OFFSET_X,
                      self.HUD_PANEL_Y + self.HUD_TEXT_OFFSET_Y))
 
-    def build_prompt(self) -> str:
-        return ("Choose one tool call for this turn. "
-                "Return only one function call with arguments.")
-
     def apply_enemy_action(self, response) -> None:
-        name, args = self.extract_function_call(response)
+        name, args = self.overseer.extract_function_call(response)
         if name is None:
             text = getattr(response, "text", None)
             if text:
@@ -632,22 +674,3 @@ class PlayingState(State):
             return
 
         print(f"Overseer output: function={name}, args={args}")
-
-    def extract_function_call(self, response):
-        candidates = getattr(response, "candidates", None) or []
-        for candidate in candidates:
-            content = getattr(candidate, "content", None)
-            if content is None:
-                continue
-
-            parts = getattr(content, "parts", None) or []
-            for part in parts:
-                function_call = getattr(part, "function_call", None)
-                if function_call is None:
-                    continue
-
-                name = getattr(function_call, "name", None)
-                args = getattr(function_call, "args", None)
-                return name, args
-
-        return None, None
