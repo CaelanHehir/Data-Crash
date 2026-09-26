@@ -7,7 +7,8 @@ TOOLS = [
             types.FunctionDeclaration(
                 name="build_robots",
                 description=("Build 100 robots, which will serve as your "
-                             "soldiers."),
+                             "soldiers. Robots can be built at any of your "
+                             "datacenters."),
                 parameters={
                     "type": "object",
                     "properties": {
