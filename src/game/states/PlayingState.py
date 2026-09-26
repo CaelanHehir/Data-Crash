@@ -384,7 +384,7 @@ class PlayingState(State):
         started = self.overseer.request(self.build_context())
         if started:
             self._waiting_for_overseer = True
-            print("Calling Overseer...")
+            print("\nCalling Overseer...")
         else:
             print("Overseer request already running...")
 
