@@ -4,6 +4,7 @@ import math
 import pygame
 from typing import Optional
 
+from src.game.entities.Commander import MoveSelection
 from src.game.buildings.Headquarters import Headquarters
 from src.game.world.Map import Map
 from src.display.text_renderer import render_text, get_font
@@ -15,6 +16,14 @@ class MapRenderer:
     SELECTED_BORDER_WIDTH = 2
     SELECTED_BORDER_RADIUS = 4
     SELECTED_BORDER_COLOR = (255, 255, 255)
+
+    MOVE_PREVIEW_FILL_COLOR = (120, 220, 120, 90)
+    MOVE_HOVER_OUTLINE_COLOR = (200, 220, 255)
+    MOVE_CONFIRM_FILL_COLOR = (60, 180, 75)
+    MOVE_CONFIRM_OUTLINE_COLOR = (255, 255, 255)
+    MOVE_CONFIRM_TICK_COLOR = (255, 255, 255)
+    MOVE_DESTINATION_OUTLINE_COLOR = (255, 220, 65)
+    MOVE_DESTINATION_OUTLINE_WIDTH = 3
 
     SECTOR_OUTLINE_COLOR = (150, 150, 150)
     SECTOR_OUTLINE_WIDTH = 1
@@ -283,6 +292,94 @@ class MapRenderer:
                                  self.SECTOR_OUTLINE_COLOR,
                                  sector_rect,
                                  width=self.SECTOR_OUTLINE_WIDTH)
+
+    def draw_move_destination_outlines(
+            self,
+            screen: pygame.Surface,
+            game_map: Map,
+            destination_cells: set[tuple[int, int]]) -> None:
+        for row, col in destination_cells:
+            destination_rect = self.cell_rect(row, col, screen, game_map)
+
+            pygame.draw.rect(screen,
+                             self.MOVE_DESTINATION_OUTLINE_COLOR,
+                             destination_rect,
+                             width=self.MOVE_DESTINATION_OUTLINE_WIDTH,
+                             border_radius=3)
+
+    def draw_rebel_move_overlay(
+            self,
+            screen: pygame.Surface,
+            game_map: Map,
+            move_selection: Optional[MoveSelection],
+            active_destination_cells: set[tuple[int, int]],
+            confirm_radius: int) -> None:
+        self.draw_move_destination_outlines(screen,
+                                            game_map,
+                                            active_destination_cells)
+
+        if move_selection is None:
+            return
+
+        path_to_draw = move_selection.path
+        if path_to_draw is None:
+            path_to_draw = move_selection.preview_path
+
+        if path_to_draw is not None:
+            for row, col in path_to_draw[1:]:
+                cell_rect = self.cell_rect(row, col, screen, game_map)
+
+                overlay = pygame.Surface(cell_rect.size, pygame.SRCALPHA)
+                pygame.draw.rect(overlay,
+                                 self.MOVE_PREVIEW_FILL_COLOR,
+                                 overlay.get_rect(),
+                                 border_radius=3)
+                screen.blit(overlay, cell_rect.topleft)
+
+        highlight_coords = move_selection.hovered_coords
+        if highlight_coords is not None:
+            row, col = highlight_coords
+            hover_rect = self.cell_rect(row, col, screen, game_map)
+
+            pygame.draw.rect(screen,
+                             self.MOVE_HOVER_OUTLINE_COLOR,
+                             hover_rect,
+                             width=2,
+                             border_radius=3)
+
+        destination_coords = move_selection.destination_coords
+        if destination_coords is not None:
+            self.draw_move_destination_outlines(screen,
+                                                game_map,
+                                                {destination_coords})
+
+        if destination_coords is None or not move_selection.path:
+            return
+
+        row, col = destination_coords
+        center = self.cell_center(row, col, screen, game_map)
+        pygame.draw.circle(screen,
+                           self.MOVE_CONFIRM_FILL_COLOR,
+                           center,
+                           confirm_radius)
+        pygame.draw.circle(screen,
+                           self.MOVE_CONFIRM_OUTLINE_COLOR,
+                           center,
+                           confirm_radius,
+                           width=1)
+        self._draw_confirmation_tick(screen, center, confirm_radius)
+
+    def _draw_confirmation_tick(self, screen: pygame.Surface,
+                                center: tuple[int, int],
+                                radius: int) -> None:
+        left = (center[0] - radius // 2, center[1] + radius // 8)
+        middle = (center[0] - radius // 8, center[1] + radius // 2)
+        right = (center[0] + radius // 2, center[1] - radius // 3)
+        line_width = max(2, radius // 5)
+        pygame.draw.line(screen, self.MOVE_CONFIRM_TICK_COLOR,
+                         left, middle, line_width)
+        pygame.draw.line(screen, self.MOVE_CONFIRM_TICK_COLOR,
+                         middle, right, line_width)
 
     def _draw_headquarters_progress(self, screen: pygame.Surface,
                                     tile_rect: pygame.Rect,
