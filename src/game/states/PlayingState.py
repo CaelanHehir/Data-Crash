@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
+from collections import defaultdict
 import pygame
 from typing import Optional
 
@@ -23,13 +24,23 @@ class OutpostConstruction:
     elapsed: float = 0.0
 
 
+class GameLogs:
+    logs: list[str]
+
+    def __init__(self):
+        self.logs = []
+
+    def add_log(self, timestamp: int, event: str) -> None:
+        print(f"{timestamp} - {event}")
+        self.logs.append(f"{timestamp} - {event}")
+
+    def clear(self) -> None:
+        self.logs.clear()
+
+
 class PlayingState(State):
     BATTLE_INTERVAL_SECONDS = 0.2
-    MOVE_PREVIEW_FILL_COLOR = (120, 220, 120, 90)
-    MOVE_HOVER_OUTLINE_COLOR = (200, 220, 255)
-    MOVE_CONFIRM_FILL_COLOR = (60, 180, 75)
-    MOVE_CONFIRM_OUTLINE_COLOR = (255, 255, 255)
-    MOVE_CONFIRM_TICK_COLOR = (255, 255, 255)
+    BUILDING_DAMAGE_PER_BATTLE_TICK = 1
 
     HUD_PANEL_WIDTH = 220
     HUD_PANEL_HEIGHT = 35
@@ -58,6 +69,10 @@ class PlayingState(State):
         self.active_outpost_constructions: dict[tuple[int, int],
                                                 OutpostConstruction] = {}
         self._battle_elapsed = 0.0
+        self.current_timestamp_seconds = 0.0
+        self.game_logs = GameLogs()
+        self._active_battle_cells: set[tuple[int, int]] = set()
+        self._active_building_attacks: dict[tuple[int, int], str] = {}
 
     def enter(self) -> None:
         # Reset/initialize a fresh run here (entities, score, etc.)
@@ -70,8 +85,68 @@ class PlayingState(State):
         self.commander.reset_movement_state()
         self.active_outpost_constructions = {}
         self._battle_elapsed = 0.0
+        self.current_timestamp_seconds = 0.0
+        self.game_logs.clear()
+        self._active_battle_cells = set()
+        self._active_building_attacks = {}
         self.commands.hide()
         self.popup.hide()
+
+    def _timestamp(self) -> int:
+        return int(self.current_timestamp_seconds)
+
+    def _cell_name(self, cell_coords: tuple[int, int]) -> str:
+        row, col = cell_coords
+        cell = self.game_map.grid[row][col]
+        return f"{cell.sector}{cell.id:02d}"
+
+    def _log_event(self, event: str) -> None:
+        self.game_logs.add_log(self._timestamp(), event)
+
+    def _building_owner(self, cell: Cell) -> Optional[str]:
+        if cell.building is None:
+            return None
+        if isinstance(cell.building, Datacenter):
+            return "robots"
+        if isinstance(cell.building, (Headquarters, Outpost)):
+            return "rebels"
+        return None
+
+    def _building_attacker_state(
+            self, cell: Cell) -> Optional[tuple[str, int]]:
+        if cell.battle_occurring:
+            return None
+
+        owner = self._building_owner(cell)
+        if owner == "robots" and cell.rebels > 0 and cell.robots == 0:
+            return "rebels", cell.rebels
+        if owner == "rebels" and cell.robots > 0 and cell.rebels == 0:
+            return "robots", cell.robots
+        return None
+
+    def _battle_cells(self) -> set[tuple[int, int]]:
+        return {(row_index, col_index)
+                for row_index, row in enumerate(self.game_map.grid)
+                for col_index, cell in enumerate(row)
+                if cell.battle_occurring}
+
+    def _log_battle_transitions(self) -> None:
+        current_battles = self._battle_cells()
+        started = current_battles - self._active_battle_cells
+        ended = self._active_battle_cells - current_battles
+
+        for cell_coords in started:
+            self._log_event("a battle started on cell "
+                            f"{self._cell_name(cell_coords)} ")
+
+        for cell_coords in ended:
+            row, col = cell_coords
+            cell = self.game_map.grid[row][col]
+            self._log_event("the battle on cell "
+                            f"{self._cell_name(cell_coords)} "
+                            f"has ended (status: {cell.battle_status()})")
+
+        self._active_battle_cells = current_battles
 
     def handle_event(self, event) -> None:
         if event.type == pygame.MOUSEWHEEL:
@@ -228,6 +303,8 @@ class PlayingState(State):
             return
 
         self.active_outpost_constructions[cell_coords] = OutpostConstruction()
+        self._log_event("Rebels started outpost construction on cell "
+                        f"{self._cell_name(cell_coords)}")
 
         if self.selected_cell_coords == cell_coords and self.selected_cell:
             self.update_popup_for_cell(cell_coords, self.selected_cell)
@@ -357,9 +434,25 @@ class PlayingState(State):
         return max(10, int(scaled_radius))
 
     def confirm_rebel_move(self) -> None:
+        move_selection = self.commander.move_selection
+        start_event: Optional[str] = None
+        if move_selection is not None and move_selection.destination_coords:
+            source_coords = move_selection.source_coords
+            destination_coords = move_selection.destination_coords
+            rebels_to_move = self.visible_rebel_count(source_coords)
+            if rebels_to_move > 0 and move_selection.path:
+                start_event = (f"{rebels_to_move} rebels started moving "
+                               "from "
+                               f"{self._cell_name(source_coords)} "
+                               "towards "
+                               f"{self._cell_name(destination_coords)}")
+
         moved, source_coords = self.commander.confirm_rebel_move(self.game_map)
         if not moved or source_coords is None:
             return
+
+        if start_event is not None:
+            self._log_event(start_event)
 
         source_row, source_col = source_coords
         source_cell = self.game_map.grid[source_row][source_col]
@@ -434,6 +527,11 @@ class PlayingState(State):
         return "\n".join(lines)
 
     def update(self, dt: float) -> None:
+        if dt < 0:
+            raise ValueError("dt cannot be negative")
+
+        self.current_timestamp_seconds += dt
+
         self.update_headquarters(dt)
         self.update_outpost_constructions(dt)
         self.update_rebel_moves(dt)
@@ -464,9 +562,46 @@ class PlayingState(State):
         self._battle_elapsed += dt
         while self._battle_elapsed >= self.BATTLE_INTERVAL_SECONDS:
             self._battle_elapsed -= self.BATTLE_INTERVAL_SECONDS
-            for row in self.game_map.grid:
-                for cell in row:
+            for row_index, row in enumerate(self.game_map.grid):
+                for col_index, cell in enumerate(row):
                     cell.battle()
+
+            next_active_building_attacks: dict[tuple[int, int], str] = {}
+            for row_index, row in enumerate(self.game_map.grid):
+                for col_index, cell in enumerate(row):
+                    attack_state = self._building_attacker_state(cell)
+                    if attack_state is None:
+                        continue
+
+                    attacker_faction, attacker_count = attack_state
+                    cell_coords = (row_index, col_index)
+                    if cell_coords not in self._active_building_attacks:
+                        if attacker_faction == "rebels":
+                            unit_name = (
+                                "rebel" if attacker_count == 1 else "rebels")
+                        else:
+                            unit_name = (
+                                "robot" if attacker_count == 1 else "robots")
+
+                        self._log_event(f"{attacker_count} {unit_name} "
+                                        "started attacking building on "
+                                        f"{self._cell_name(cell_coords)}")
+
+                    cell.building.take_damage(
+                        self.BUILDING_DAMAGE_PER_BATTLE_TICK)
+                    if cell.building.current_durability <= 0:
+                        self._log_event(f"{attacker_faction} destroyed "
+                                        "building on "
+                                        f"{self._cell_name(cell_coords)}")
+                        cell.set_building(None)
+                        continue
+
+                    next_active_building_attacks[cell_coords] = (
+                        attacker_faction)
+
+            self._active_building_attacks = next_active_building_attacks
+
+        self._log_battle_transitions()
 
         if selected_coords is None or selected_snapshot is None:
             return
@@ -513,6 +648,8 @@ class PlayingState(State):
             cell = self.game_map.grid[row][col]
             outpost_name = f"Outpost {cell.sector}"
             cell.set_building(Outpost(name=outpost_name))
+            self._log_event("Rebels finished outpost construction on cell "
+                            f"{self._cell_name((row, col))}")
 
         if selected_changed and self.selected_cell is not None:
             selected_coords = self.selected_cell_coords
@@ -548,8 +685,28 @@ class PlayingState(State):
             if selected_coords is not None:
                 self.update_popup_for_cell(selected_coords, self.selected_cell)
 
+        self._log_battle_transitions()
+
     def update_rebel_moves(self, dt: float) -> None:
+        moves_before = list(self.commander.active_rebel_moves)
         changed_cells = self.commander.update_rebel_moves(self.game_map, dt)
+
+        active_after_ids = {id(move)
+                            for move in self.commander.active_rebel_moves}
+        arrivals_by_destination: dict[tuple[int, int], int] = defaultdict(int)
+        for move in moves_before:
+            if id(move) in active_after_ids:
+                continue
+
+            destination = move.path[-1]
+            arrivals_by_destination[destination] += move.rebels
+
+        for destination, rebels_arrived in arrivals_by_destination.items():
+            self._log_event(f"{rebels_arrived} rebels arrived at "
+                            f"{self._cell_name(destination)}")
+
+        self._log_battle_transitions()
+
         if (self.selected_cell_coords in changed_cells
                 and self.selected_cell is not None):
             selected_coords = self.selected_cell_coords
@@ -563,11 +720,22 @@ class PlayingState(State):
                                rebel_counts=self.visible_rebel_counts(),
                                outpost_construction_progress=(
                                    self.outpost_construction_progress_map()))
+        active_destinations = {batch.path[-1]
+                               for batch in self.commander.active_rebel_moves
+                               if batch.path and batch.current_index
+                               < len(batch.path) - 1}
+        self.map_renderer.draw_rebel_move_overlay(
+            screen,
+            self.game_map,
+            self.commander.move_selection,
+            active_destinations,
+            self.move_confirmation_radius())
 
         if self.commands.active and self.commands.cell_coords is not None:
             row, col = self.commands.cell_coords
-            self.commands.update_context(self.command_context_for_cell((row,
-                                                                        col)))
+            self.commands.update_context(
+                self.command_context_for_cell((row, col)))
+
             center = self.map_renderer.cell_center(row,
                                                    col,
                                                    self.game.screen,
@@ -575,68 +743,9 @@ class PlayingState(State):
 
             self.commands.update_transform(center, self.camera.zoom)
 
-        self.draw_move_preview(screen)
         self.draw_commander_hud(screen)
         self.commands.draw(screen)
         self.popup.draw(screen)
-
-    def draw_move_preview(self, screen: pygame.Surface) -> None:
-        move_selection = self.commander.move_selection
-        if move_selection is None:
-            return
-
-        path_to_draw = move_selection.path
-        if path_to_draw is None:
-            path_to_draw = move_selection.preview_path
-
-        if path_to_draw is not None:
-            for row, col in path_to_draw[1:]:
-                cell_rect = self.map_renderer.cell_rect(row, col,
-                                                        self.game.screen,
-                                                        self.game_map)
-
-                overlay = pygame.Surface(cell_rect.size, pygame.SRCALPHA)
-                pygame.draw.rect(overlay, self.MOVE_PREVIEW_FILL_COLOR,
-                                 overlay.get_rect(), border_radius=3)
-                screen.blit(overlay, cell_rect.topleft)
-
-        highlight_coords = move_selection.hovered_coords
-        if highlight_coords is not None:
-            row, col = highlight_coords
-            hover_rect = self.map_renderer.cell_rect(row, col,
-                                                     self.game.screen,
-                                                     self.game_map)
-
-            pygame.draw.rect(screen, self.MOVE_HOVER_OUTLINE_COLOR,
-                             hover_rect, width=2,
-                             border_radius=3)
-
-        destination_coords = move_selection.destination_coords
-        if destination_coords is not None and move_selection.path:
-            row, col = destination_coords
-            center = self.map_renderer.cell_center(row, col,
-                                                   self.game.screen,
-                                                   self.game_map)
-
-            radius = self.move_confirmation_radius()
-            pygame.draw.circle(screen, self.MOVE_CONFIRM_FILL_COLOR,
-                               center, radius)
-            pygame.draw.circle(screen, self.MOVE_CONFIRM_OUTLINE_COLOR,
-                               center, radius,
-                               width=1)
-            self._draw_confirmation_tick(screen, center, radius)
-
-    def _draw_confirmation_tick(self, screen: pygame.Surface,
-                                center: tuple[int, int],
-                                radius: int) -> None:
-        left = (center[0] - radius // 2, center[1] + radius // 8)
-        middle = (center[0] - radius // 8, center[1] + radius // 2)
-        right = (center[0] + radius // 2, center[1] - radius // 3)
-        line_width = max(2, radius // 5)
-        pygame.draw.line(screen, self.MOVE_CONFIRM_TICK_COLOR, left,
-                         middle, line_width)
-        pygame.draw.line(screen, self.MOVE_CONFIRM_TICK_COLOR, middle,
-                         right, line_width)
 
     def draw_commander_hud(self, screen: pygame.Surface) -> None:
         panel_rect = pygame.Rect(self.HUD_PANEL_X,
