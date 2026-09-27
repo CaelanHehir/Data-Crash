@@ -61,7 +61,8 @@ class Cell:
         self.robots += number
         self._refresh_battle_state()
 
-    def battle(self) -> None:
+    def battle(self) -> str:
+        """ Returns the winner of the battle """
         if not self.battle_occurring:
             return
 
@@ -80,6 +81,17 @@ class Cell:
                 self.rebels -= 1
 
         self._refresh_battle_state()
+
+        return self.battle_status()
+
+    def battle_status(self) -> str:
+        if self.rebels and self.robots:
+            return "ongoing"
+        if self.rebels and not self.robots:
+            return "rebel victory"
+        if self.robots and not self.rebels:
+            return "robot victory"
+        return "mutual destruction"
 
     @property
     def outline_color(self) -> tuple[int, int, int]:
