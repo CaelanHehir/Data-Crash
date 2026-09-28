@@ -41,6 +41,8 @@ class Overseer:
         self.last_called_timestamp = 0.0
         self.turn_number = 0
 
+        self.llm_model = "gemini-3.5-flash-lite"
+
         self.client = genai.Client()
         self.results = queue.Queue()
         self._thread: threading.Thread | None = None
@@ -62,22 +64,21 @@ class Overseer:
             "action. You can either build 100 robots in one of your "
             "controlled databases, or move a group of robots to another "
             "location on the map.\n"
+            "- Building robots costs resources. Do not waste resources on "
+            "building an excessive number of robots.\n"
             "- Building robots in a datacenter is permitted even if there is"
             "an active combat within said datacenter.\n"
             "- Rebels and robots occupying the same cell will automatically "
-            "attack each other. Therefore, you do not need to manually direct "
-            "robots to attack rebels residing in the same cell.\n"
+            "attack each other.\n"
             "- Avoid attacking enemy rebels unless you have a larger group of "
             "robots to attack them with.\n"
             "- You can combine two separate groups of robots by moving them "
             "onto the same cell. This can allow you to quickly build large "
             "forces.\n"
-            "- Plan with the long game in mind: one action per turn means "
-            "priorities should build toward a sustained advantage, not just "
-            "an immediate gain.\n"
-            "- However, if you have an overwhelming advantage, make sure to "
-            "quickly capitalize on it to destroy the enemy without giving "
-            "them time to resist.")
+            "- You can destroy enemy headquarters and outposts by moving your "
+            "forces onto the corresponding Cell.\n"
+            "- Your end goal is to destroy all human resistance as fast as "
+            "possible. Act decisively.\n")
 
         self.strategy_prompt_template = (
             "{game_rules}\n\n"
@@ -90,9 +91,14 @@ class Overseer:
             "these logs to enhance your strategy.\n"
             "Return plain text strategy notes only, no tool "
             "calls. Your output should contain two sections: "
-            "A short map analysis where you go over the map state as your "
-            "AI overlord character, and a plan section where you explain "
-            "your next move. Keep roleplay to a minimum.\n\n"
+            "- Map analysis: go over your own current situation, "
+            "as well as the rebels' situation. Determine who currently has "
+            "a better strategic position by analysing the current map state, "
+            "the number of allied and enemy soldiers, and the event logs "
+            "provided to you.\n"
+            "- Plan: use your analysis to decide on the best course of "
+            "action. You can only make one decision per turn.\n"
+            "Keep roleplay to a minimum.\n\n"
             "{prompt}")
 
     def request(self, context: str = "",
@@ -213,7 +219,7 @@ class Overseer:
             )
 
             chat = self.client.chats.create(
-                model="gemini-3.5-flash-lite",
+                model=self.llm_model,
                 config=config)
 
             response = chat.send_message(prompt)

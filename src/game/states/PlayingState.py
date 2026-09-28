@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from collections import defaultdict
+from collections.abc import Mapping
 import pygame
 from typing import Optional
 
@@ -24,6 +25,14 @@ class OutpostConstruction:
     elapsed: float = 0.0
 
 
+@dataclass
+class RobotMoveBatch:
+    path: list[tuple[int, int]]
+    robots: int
+    current_index: int = 0
+    time_until_advance: float = 0.0
+
+
 class GameLogs:
     logs: list[str]
 
@@ -41,6 +50,9 @@ class GameLogs:
 class PlayingState(State):
     BATTLE_INTERVAL_SECONDS = 0.2
     BUILDING_DAMAGE_PER_BATTLE_TICK = 1
+    ROBOT_BUILD_AMOUNT = 100
+    ROBOT_MOVE_TIME = 0.5
+    ROBOT_MOVE_BATCH_SIZE = 500
 
     HUD_PANEL_WIDTH = 220
     HUD_PANEL_HEIGHT = 35
@@ -73,6 +85,7 @@ class PlayingState(State):
         self.game_logs = GameLogs()
         self._active_battle_cells: set[tuple[int, int]] = set()
         self._active_building_attacks: dict[tuple[int, int], str] = {}
+        self.active_robot_moves: list[RobotMoveBatch] = []
 
     def enter(self) -> None:
         # Reset/initialize a fresh run here (entities, score, etc.)
@@ -89,6 +102,7 @@ class PlayingState(State):
         self.game_logs.clear()
         self._active_battle_cells = set()
         self._active_building_attacks = {}
+        self.active_robot_moves = []
         self.commands.hide()
         self.popup.hide()
 
@@ -262,7 +276,7 @@ class PlayingState(State):
 
         description_lines.extend([
             f"Rebels: {self.visible_rebel_count(cell_coords)}",
-            f"Robots: {cell.robots}"])
+            f"Robots: {self.visible_robot_count(cell_coords)}"])
 
         description = "\n".join(description_lines)
         self.popup.show(title=f"{cell.sector}{cell.id:02d}",
@@ -381,6 +395,30 @@ class PlayingState(State):
 
     def visible_rebel_counts(self) -> dict[tuple[int, int], int]:
         return self.commander.visible_rebel_counts(self.game_map)
+
+    def robot_batches_at(self,
+                         cell_coords: tuple[int, int]) -> list[RobotMoveBatch]:
+        return [batch for batch in self.active_robot_moves
+                if batch.path[batch.current_index] == cell_coords]
+
+    def visible_robot_count(self, cell_coords: tuple[int, int]) -> int:
+        row, col = cell_coords
+        total_robots = self.game_map.grid[row][col].robots
+        for batch in self.robot_batches_at(cell_coords):
+            total_robots += batch.robots
+
+        return total_robots
+
+    def visible_robot_counts(self) -> dict[tuple[int, int], int]:
+        robot_counts = {(row_index, col_index): cell.robots
+                        for row_index, row in enumerate(self.game_map.grid)
+                        for col_index, cell in enumerate(row)}
+
+        for batch in self.active_robot_moves:
+            coords = batch.path[batch.current_index]
+            robot_counts[coords] = robot_counts.get(coords, 0) + batch.robots
+
+        return robot_counts
 
     def update_move_hover(self, mouse_pos: tuple[int, int]) -> None:
         hovered_coords = self.map_renderer.pick_cell(mouse_pos,
@@ -505,7 +543,7 @@ class PlayingState(State):
                     outpost_cells.append(f"{cell_ref}")
 
                 rebels = self.visible_rebel_count((row_index, col_index))
-                robots = cell.robots
+                robots = self.visible_robot_count((row_index, col_index))
                 if rebels > 0 or robots > 0:
                     forces_cells.append(
                         f"{cell_ref}: rebels={rebels}, robots={robots}")
@@ -538,6 +576,7 @@ class PlayingState(State):
         self.update_headquarters(dt)
         self.update_outpost_constructions(dt)
         self.update_rebel_moves(dt)
+        self.update_robot_moves(dt)
         self.update_battles(dt)
 
         result = self.overseer.poll()
@@ -559,7 +598,7 @@ class PlayingState(State):
             row, col = selected_coords
             selected_cell = self.game_map.grid[row][col]
             selected_snapshot = (self.visible_rebel_count(selected_coords),
-                                 selected_cell.robots,
+                                 self.visible_robot_count(selected_coords),
                                  selected_cell.battle_occurring)
 
         self._battle_elapsed += dt
@@ -614,7 +653,7 @@ class PlayingState(State):
         row, col = selected_coords
         selected_cell = self.game_map.grid[row][col]
         updated_snapshot = (self.visible_rebel_count(selected_coords),
-                            selected_cell.robots,
+                            self.visible_robot_count(selected_coords),
                             selected_cell.battle_occurring)
         if updated_snapshot != selected_snapshot:
             self.update_popup_for_cell(selected_coords, selected_cell)
@@ -716,11 +755,82 @@ class PlayingState(State):
             if selected_coords is not None:
                 self.update_popup_for_cell(selected_coords, self.selected_cell)
 
+    def update_robot_moves(self, dt: float) -> None:
+        if dt < 0:
+            raise ValueError("dt cannot be negative")
+
+        changed_cells: set[tuple[int, int]] = set()
+        arrivals_by_destination: dict[tuple[int, int], int] = defaultdict(int)
+        remaining_moves: list[RobotMoveBatch] = []
+
+        for move in self.active_robot_moves:
+            move.time_until_advance -= dt
+
+            while move.time_until_advance <= 0:
+                if move.current_index >= len(move.path) - 1:
+                    break
+
+                current_row, current_col = move.path[move.current_index]
+                next_row, next_col = move.path[move.current_index + 1]
+                move.current_index += 1
+                changed_cells.add((current_row, current_col))
+                changed_cells.add((next_row, next_col))
+
+                if move.current_index == len(move.path) - 1:
+                    destination_cell = self.game_map.grid[next_row][next_col]
+                    destination_cell.add_robots(move.robots)
+                    arrivals_by_destination[(next_row,
+                                             next_col)] += move.robots
+                else:
+                    move.time_until_advance += self.ROBOT_MOVE_TIME
+
+            if move.current_index < len(move.path) - 1:
+                remaining_moves.append(move)
+
+        self.active_robot_moves = remaining_moves
+
+        for destination, robots_arrived in arrivals_by_destination.items():
+            self._log_event(f"{robots_arrived} robots arrived at "
+                            f"{self._cell_name(destination)}")
+
+        if (self.selected_cell_coords in changed_cells
+                and self.selected_cell is not None):
+            selected_coords = self.selected_cell_coords
+            if selected_coords is not None:
+                self.update_popup_for_cell(selected_coords, self.selected_cell)
+
+    def _create_robot_batches(self, path: list[tuple[int, int]],
+                              robots_to_move: int) -> None:
+        remaining_robots = robots_to_move
+        batch_index = 0
+        while remaining_robots > 0:
+            batch_size = min(remaining_robots, self.ROBOT_MOVE_BATCH_SIZE)
+            remaining_robots -= batch_size
+            self.active_robot_moves.append(RobotMoveBatch(
+                path=list(path),
+                robots=batch_size,
+                current_index=0,
+                time_until_advance=(batch_index + 1) * self.ROBOT_MOVE_TIME,
+            ))
+            batch_index += 1
+
+    def _redirect_robot_moves(self, source_coords: tuple[int, int],
+                              path: list[tuple[int, int]]) -> None:
+        for batch in self.robot_batches_at(source_coords):
+            preserved_delay = batch.time_until_advance
+            batch.path = list(path)
+            batch.current_index = 0
+            if preserved_delay > 0:
+                batch.time_until_advance = preserved_delay
+            else:
+                batch.time_until_advance = self.ROBOT_MOVE_TIME
+
     def render(self, screen) -> None:
         screen.fill((10, 12, 20))
         self.map_renderer.draw(screen, self.game_map,
                                selected_cell=self.selected_cell_coords,
                                rebel_counts=self.visible_rebel_counts(),
+                               robot_counts=self.visible_robot_counts(),
                                outpost_construction_progress=(
                                    self.outpost_construction_progress_map()))
         active_destinations = {batch.path[-1]
@@ -786,3 +896,120 @@ class PlayingState(State):
             return
 
         print(f"Overseer output: function={name}, args={args}")
+
+        if name == "build_robots":
+            self._apply_enemy_build_robots(args)
+            return
+
+        if name == "rally_robots":
+            self._apply_enemy_rally_robots(args)
+            return
+
+        print(f"Unknown overseer function call: {name}")
+
+    def _parse_function_args(self, args) -> dict[str, str]:
+        if isinstance(args, Mapping):
+            return {str(key): value for key, value in args.items()}
+        return {}
+
+    def _normalize_cell_name(self, raw_name: str) -> str:
+        token = raw_name.strip()
+        if not token:
+            return ""
+
+        token = token.split()[0]
+        token = token.strip().strip(",")
+        token = token.split("(")[0].strip()
+        return token.lower()
+
+    def _find_cell_coords_by_name(
+            self, cell_name: str) -> Optional[tuple[int, int]]:
+        normalized_target = self._normalize_cell_name(cell_name)
+        if not normalized_target:
+            return None
+
+        for row_index, row in enumerate(self.game_map.grid):
+            for col_index, cell in enumerate(row):
+                canonical_name = f"{cell.sector}{cell.id:02d}".lower()
+                if canonical_name == normalized_target:
+                    return row_index, col_index
+
+        return None
+
+    def _apply_enemy_build_robots(self, args) -> None:
+        parsed_args = self._parse_function_args(args)
+        spawn_point = str(parsed_args.get("spawn_point", "")).strip()
+        if not spawn_point:
+            print("Overseer action rejected: missing spawn_point")
+            return
+
+        spawn_coords = self._find_cell_coords_by_name(spawn_point)
+        if spawn_coords is None:
+            print("Overseer action rejected: unknown spawn_point "
+                  f"'{spawn_point}'")
+            return
+
+        row, col = spawn_coords
+        spawn_cell = self.game_map.grid[row][col]
+        if not isinstance(spawn_cell.building, Datacenter):
+            print("Overseer action rejected: spawn_point is not a datacenter "
+                  f"('{spawn_point}')")
+            return
+
+        spawn_cell.add_robots(self.ROBOT_BUILD_AMOUNT)
+        self._log_event(f"Overseer built {self.ROBOT_BUILD_AMOUNT} robots "
+                        f"at {self._cell_name(spawn_coords)}")
+
+        if self.selected_cell_coords == spawn_coords and self.selected_cell:
+            self.update_popup_for_cell(spawn_coords, spawn_cell)
+
+    def _apply_enemy_rally_robots(self, args) -> None:
+        parsed_args = self._parse_function_args(args)
+        source_name = str(parsed_args.get("source", "")).strip()
+        target_name = str(parsed_args.get("target", "")).strip()
+
+        if not source_name or not target_name:
+            print("Overseer action rejected: source and target are required")
+            return
+
+        source_coords = self._find_cell_coords_by_name(source_name)
+        target_coords = self._find_cell_coords_by_name(target_name)
+
+        if source_coords is None:
+            print(f"Overseer action rejected: unknown source '{source_name}'")
+            return
+        if target_coords is None:
+            print(f"Overseer action rejected: unknown target '{target_name}'")
+            return
+        if source_coords == target_coords:
+            print("Overseer action rejected: source and target are identical")
+            return
+
+        source_row, source_col = source_coords
+        source_cell = self.game_map.grid[source_row][source_col]
+        path = self.commander.find_rebel_path(self.game_map,
+                                              source_coords,
+                                              target_coords)
+        if not path:
+            print("Overseer action rejected: no path found")
+            return
+
+        robots_to_move = self.visible_robot_count(source_coords)
+        if robots_to_move <= 0:
+            print("Overseer action rejected: no robots available at "
+                  f"{self._cell_name(source_coords)}")
+            return
+
+        self._redirect_robot_moves(source_coords, path)
+
+        stationed_robots = source_cell.robots
+        if stationed_robots > 0:
+            source_cell.remove_robots(stationed_robots)
+            self._create_robot_batches(path, stationed_robots)
+
+        self._log_event(f"Overseer rallied {robots_to_move} robots from "
+                        f"{self._cell_name(source_coords)} to "
+                        f"{self._cell_name(target_coords)}")
+
+        if self.selected_cell_coords == source_coords and self.selected_cell:
+            self.update_popup_for_cell(source_coords, source_cell)
