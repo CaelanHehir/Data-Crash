@@ -217,6 +217,7 @@ class MapRenderer:
     def draw(self, screen: pygame.Surface, game_map: Map,
              selected_cell: Optional[tuple[int, int]] = None,
              rebel_counts: Optional[dict[tuple[int, int], int]] = None,
+             robot_counts: Optional[dict[tuple[int, int], int]] = None,
              outpost_construction_progress:
              Optional[dict[tuple[int, int], float]] = None
              ) -> None:
@@ -261,9 +262,15 @@ class MapRenderer:
                     displayed_rebels = rebel_counts.get((row_index, col_index),
                                                         displayed_rebels)
 
+                displayed_robots = cell.robots
+                if robot_counts is not None:
+                    displayed_robots = robot_counts.get((row_index,
+                                                        col_index),
+                                                        displayed_robots)
+
                 self._draw_unit_counts(screen, tile_rect,
                                        rebels=displayed_rebels,
-                                       robots=cell.robots)
+                                       robots=displayed_robots)
 
                 pygame.draw.rect(screen, cell.outline_color,
                                  tile_rect, width=2,

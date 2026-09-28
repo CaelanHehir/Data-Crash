@@ -61,6 +61,15 @@ class Cell:
         self.robots += number
         self._refresh_battle_state()
 
+    def remove_robots(self, number: int) -> None:
+        if number < 1:
+            raise ValueError("robot number cannot be negative")
+        if number > self.robots:
+            raise ValueError("cannot remove more robots than available")
+
+        self.robots -= number
+        self._refresh_battle_state()
+
     def battle(self) -> str:
         """ Returns the winner of the battle """
         if not self.battle_occurring:
