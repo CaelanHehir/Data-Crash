@@ -9,4 +9,4 @@ Add remaining command: repair building.
 
 Improve context sent to overseer (building durability, etc).
 
-Generate logs when events occur, and send them to the model, instead of having the model compare two gamestates.
+Make it so that robots destroy rebel buildings on occupied cells and vice-versa, as long as a battle is not occurring.
