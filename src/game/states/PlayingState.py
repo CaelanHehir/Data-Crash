@@ -40,8 +40,8 @@ class GameLogs:
         self.logs = []
 
     def add_log(self, timestamp: int, event: str) -> None:
-        print(f"{timestamp} - {event}")
-        self.logs.append(f"{timestamp} - {event}")
+        print(f"{timestamp}s - {event}")
+        self.logs.append(f"{timestamp}s - {event}")
 
     def clear(self) -> None:
         self.logs.clear()
