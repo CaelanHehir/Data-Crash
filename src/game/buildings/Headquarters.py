@@ -6,11 +6,11 @@ from src.game.buildings.Building import Building
 class Headquarters(Building):
     MOBILIZING = "Mobilizing"
     TRAINING = "Training"
-    MANPOWER_PER_CYCLE = 5
+    MANPOWER_PER_CYCLE = 20
     MOBILIZING_INTERVAL = 10.0
-    REBEL_COST = 1
+    REBEL_COST = 10
     REBELS_PER_CYCLE = 10
-    TRAINING_INTERVAL = 3.0
+    TRAINING_INTERVAL = 5.0
 
     def __init__(self, name: str) -> None:
         super().__init__(name)

@@ -55,8 +55,7 @@ class Map:
                 row.append(Cell(
                     sector=available_sector_names[sector_index],
                     id=cell_id,
-                    building=None,
-                ))
+                    building=None))
             self.grid.append(row)
 
         self._place_buildings()
@@ -82,4 +81,4 @@ class Map:
 
         for cell in datacenter_cells:
             cell.set_building(Datacenter(name=f"{cell.sector} Datacenter"))
-            cell.add_robots(150)
+            cell.add_robots(50)

@@ -8,5 +8,3 @@ The program starts a new thread to make requests to an LLM (currently gemini 3.5
 Add remaining command: repair building.
 
 Improve context sent to overseer (building durability, etc).
-
-Make it so that robots destroy rebel buildings on occupied cells and vice-versa, as long as a battle is not occurring.

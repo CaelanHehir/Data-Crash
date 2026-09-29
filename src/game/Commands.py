@@ -22,6 +22,8 @@ class CommandContext:
     start_rebel_move_mode: Callable[[tuple[int, int]], None]
     start_outpost_build_mode: Callable[[tuple[int, int]], None]
     can_build_outpost: Callable[[tuple[int, int]], bool]
+    repair_building: Callable[[tuple[int, int]], None]
+    can_repair_building: Callable[[tuple[int, int]], bool]
 
 
 @dataclass
@@ -52,9 +54,9 @@ class Commands:
                       CommandItem("O",
                                   self.start_outpost_build,
                                   self.can_start_outpost_build),
-                      CommandItem("D",
-                                  self._placeholder_command_d,
-                                  self._always_available)]
+                      CommandItem("R",
+                                  self.repair_building,
+                                  self.can_repair_building)]
 
     def set_item(self, index: int, label: str,
                  callback: Callable[[CommandContext], None],
@@ -200,11 +202,11 @@ class Commands:
     def can_start_outpost_build(self, context: CommandContext) -> bool:
         return context.can_build_outpost(context.cell_coords)
 
-    def _always_available(self, _context: CommandContext) -> bool:
-        return True
+    def repair_building(self, context: CommandContext) -> None:
+        if not self.can_repair_building(context):
+            return
 
-    def _placeholder_command_c(self, _context: CommandContext) -> None:
-        return
+        context.repair_building(context.cell_coords)
 
-    def _placeholder_command_d(self, _context: CommandContext) -> None:
-        return
+    def can_repair_building(self, context: CommandContext) -> bool:
+        return context.can_repair_building(context.cell_coords)

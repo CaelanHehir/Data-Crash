@@ -9,7 +9,7 @@ class Building(ABC):
 
         self.max_durability = 1000
         self.current_durability = self.max_durability
-        self.repair_amount = 100
+        self.repair_amount = 150
 
     def take_damage(self, value: int) -> None:
         if value < 0:

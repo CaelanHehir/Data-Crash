@@ -16,6 +16,7 @@ from src.game.entities.Camera import Camera
 from src.game.entities.Commander import Commander
 from src.game.world.Cell import Cell
 from src.game.world.Map import Map
+from src.game.states.EndState import EndState
 from src.game.states.State import State
 from src.overseer.Overseer import Overseer
 from src.display.text_renderer import get_font
@@ -51,10 +52,16 @@ class GameLogs:
 class PlayingState(State):
     BATTLE_INTERVAL_SECONDS = 0.2
     BUILDING_DAMAGE_CHANCE_PER_ENEMY = 0.1
-    ROBOT_BUILD_AMOUNT = 100
+
+    BUILDING_REPAIR_COST = 20
+    BUILDING_REPAIR_AMOUNT = 150
+
+    ROBOT_MOVE_TIME = 1.5
     ROBOT_MOVE_BATCH_SIZE = 500
-    OVERSEER_FIRST_CALL_DELAY_SECONDS = 10.0
-    OVERSEER_CALL_INTERVAL_SECONDS = 10.0
+    ROBOT_BUILD_AMOUNT = 100
+
+    OVERSEER_FIRST_CALL_DELAY_SECONDS = 120.0
+    OVERSEER_CALL_INTERVAL_SECONDS = 30.0
 
     HUD_PANEL_WIDTH = 220
     HUD_PANEL_HEIGHT = 35
@@ -361,7 +368,46 @@ class PlayingState(State):
             toggle_headquarters_mode=self.toggle_headquarters_mode,
             start_rebel_move_mode=self.start_rebel_move_mode,
             start_outpost_build_mode=self.start_outpost_build_mode,
-            can_build_outpost=self.can_build_outpost)
+            can_build_outpost=self.can_build_outpost,
+            repair_building=self.repair_building,
+            can_repair_building=self.can_repair_building)
+
+    def can_repair_building(self, cell_coords: tuple[int, int]) -> bool:
+        row, col = cell_coords
+        cell = self.game_map.grid[row][col]
+        building = cell.building
+        if building is None:
+            return False
+
+        if self._building_owner(cell) != "rebels":
+            return False
+
+        if building.current_durability >= building.max_durability:
+            return False
+
+        if self.commander.manpower < self.BUILDING_REPAIR_COST:
+            return False
+
+        return True
+
+    def repair_building(self, cell_coords: tuple[int, int]) -> None:
+        if not self.can_repair_building(cell_coords):
+            return
+
+        row, col = cell_coords
+        cell = self.game_map.grid[row][col]
+        building = cell.building
+        if building is None:
+            return
+
+        spent = self.commander.spend_manpower(self.BUILDING_REPAIR_COST)
+        if not spent:
+            return
+
+        building.repair()
+
+        self._log_event(f"Rebels repaired {building.name} on "
+                        f"{self._cell_name(cell_coords)}")
 
     def start_outpost_build_mode(self, cell_coords: tuple[int, int]) -> None:
         if not self.can_build_outpost(cell_coords):
@@ -618,6 +664,27 @@ class PlayingState(State):
 
         return "\n".join(lines)
 
+    def _transition_if_game_over(self) -> bool:
+        has_robot_datacenter = False
+        has_rebel_hq_or_outpost = False
+
+        for row in self.game_map.grid:
+            for cell in row:
+                if isinstance(cell.building, Datacenter):
+                    has_robot_datacenter = True
+                elif isinstance(cell.building, (Headquarters, Outpost)):
+                    has_rebel_hq_or_outpost = True
+
+        if not has_rebel_hq_or_outpost:
+            self.game.change_state(EndState(self.game, did_win=False))
+            return True
+
+        if not has_robot_datacenter:
+            self.game.change_state(EndState(self.game, did_win=True))
+            return True
+
+        return False
+
     def update(self, dt: float) -> None:
         if dt < 0:
             raise ValueError("dt cannot be negative")
@@ -629,6 +696,9 @@ class PlayingState(State):
         self.update_rebel_moves(dt)
         self.update_robot_moves(dt)
         self.update_battles(dt)
+        if self._transition_if_game_over():
+            return
+
         self.update_overseer_timer(dt)
         self.refresh_selected_popup_if_needed()
 
@@ -638,6 +708,8 @@ class PlayingState(State):
             status, payload = result
             if status == "ok":
                 self.apply_enemy_action(payload)
+                if self._transition_if_game_over():
+                    return
             else:
                 print(f"LLM call failed: {payload}")
 
@@ -843,7 +915,7 @@ class PlayingState(State):
                     arrivals_by_destination[(next_row,
                                              next_col)] += move.robots
                 else:
-                    move.time_until_advance += self.commander.UNIT_MOVE_TIME
+                    move.time_until_advance += self.ROBOT_MOVE_TIME
 
             if move.current_index < len(move.path) - 1:
                 remaining_moves.append(move)

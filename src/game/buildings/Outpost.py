@@ -4,8 +4,8 @@ from src.game.buildings.Headquarters import Headquarters
 
 
 class Outpost(Headquarters):
-    REBEL_REQUIREMENT = 15
-    BUILD_TIME = 20.0
+    REBEL_REQUIREMENT = 30
+    BUILD_TIME = 60.0
 
     def __init__(self, name: str) -> None:
         super().__init__(name)
