@@ -16,6 +16,8 @@ class Cell:
     DEFAULT_OUTLINE_COLOR = (75, 75, 75)
     BATTLE_OUTLINE_COLOR = (220, 65, 65)
 
+    UNIT_DEATH_CHANCE = 0.1
+
     def __init__(self, sector: str, id: int,
                  building: Optional[Building]) -> None:
         self.sector = sector
@@ -78,14 +80,14 @@ class Cell:
         for _ in range(self.rebels):
             if not self.robots:
                 break
-            rebels_hit = random() < 0.01
-            if rebels_hit:
+            rebels_hit = random() < self.UNIT_DEATH_CHANCE
+            if rebels_hit and self.robots > 0:
                 self.robots -= 1
 
         for _ in range(self.robots):
             if not self.rebels:
                 break
-            robots_hit = random() < 0.01
+            robots_hit = random() < self.UNIT_DEATH_CHANCE
             if robots_hit and self.rebels > 0:
                 self.rebels -= 1
 

@@ -2,10 +2,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from collections import defaultdict
 from collections.abc import Mapping
+from random import random
 import pygame
 from typing import Optional
 
-from src.display.Commands import CommandContext, Commands
+from src.game.Commands import CommandContext, Commands
 from src.display.Popup import Popup
 from src.display.map_renderer import MapRenderer
 from src.game.buildings.Datacenter import Datacenter
@@ -49,10 +50,11 @@ class GameLogs:
 
 class PlayingState(State):
     BATTLE_INTERVAL_SECONDS = 0.2
-    BUILDING_DAMAGE_PER_BATTLE_TICK = 1
+    BUILDING_DAMAGE_CHANCE_PER_ENEMY = 0.1
     ROBOT_BUILD_AMOUNT = 100
-    ROBOT_MOVE_TIME = 0.5
     ROBOT_MOVE_BATCH_SIZE = 500
+    OVERSEER_FIRST_CALL_DELAY_SECONDS = 10.0
+    OVERSEER_CALL_INTERVAL_SECONDS = 10.0
 
     HUD_PANEL_WIDTH = 220
     HUD_PANEL_HEIGHT = 35
@@ -86,6 +88,8 @@ class PlayingState(State):
         self._active_battle_cells: set[tuple[int, int]] = set()
         self._active_building_attacks: dict[tuple[int, int], str] = {}
         self.active_robot_moves: list[RobotMoveBatch] = []
+        self._overseer_time_until_call = self.OVERSEER_FIRST_CALL_DELAY_SECONDS
+        self._selected_popup_state: Optional[tuple] = None
 
     def enter(self) -> None:
         # Reset/initialize a fresh run here (entities, score, etc.)
@@ -103,6 +107,8 @@ class PlayingState(State):
         self._active_battle_cells = set()
         self._active_building_attacks = {}
         self.active_robot_moves = []
+        self._overseer_time_until_call = self.OVERSEER_FIRST_CALL_DELAY_SECONDS
+        self._selected_popup_state = None
         self.commands.hide()
         self.popup.hide()
 
@@ -137,6 +143,14 @@ class PlayingState(State):
         if owner == "rebels" and cell.robots > 0 and cell.rebels == 0:
             return "robots", cell.robots
         return None
+
+    def _building_damage_roll(self, enemy_units: int) -> int:
+        damage = 0
+        for _ in range(enemy_units):
+            if random() < self.BUILDING_DAMAGE_CHANCE_PER_ENEMY:
+                damage += 1
+
+        return damage
 
     def _battle_cells(self) -> set[tuple[int, int]]:
         return {(row_index, col_index)
@@ -229,8 +243,6 @@ class PlayingState(State):
             if event.key == pygame.K_ESCAPE:
                 from src.game.states.MenuState import MenuState
                 self.game.change_state(MenuState(self.game))
-            elif event.key == pygame.K_SPACE:
-                self.start_overseer_request()
 
     def select_cell(self, mouse_pos: tuple[int, int],
                     toggle: bool = True) -> None:
@@ -240,12 +252,14 @@ class PlayingState(State):
         if selected is None:
             self.selected_cell = None
             self.selected_cell_coords = None
+            self._selected_popup_state = None
             self.popup.hide()
             return
 
         if selected == self.selected_cell_coords and toggle:
             self.selected_cell = None
             self.selected_cell_coords = None
+            self._selected_popup_state = None
             self.popup.hide()
             return
 
@@ -281,6 +295,43 @@ class PlayingState(State):
         description = "\n".join(description_lines)
         self.popup.show(title=f"{cell.sector}{cell.id:02d}",
                         description=description)
+
+    def _build_selected_popup_state(self) -> Optional[tuple]:
+        if self.selected_cell_coords is None:
+            return None
+
+        row, col = self.selected_cell_coords
+        cell = self.game_map.grid[row][col]
+
+        if cell.building is None:
+            building_state: tuple[object, ...] = (None,)
+        else:
+            building_state = (cell.building.name,
+                              cell.building.current_durability,
+                              cell.building.max_durability)
+
+        outpost_progress: float | None = None
+        if self.selected_cell_coords in self.active_outpost_constructions:
+            outpost_progress = self.outpost_construction_progress(
+                self.selected_cell_coords)
+
+        return (self.visible_rebel_count(self.selected_cell_coords),
+                self.visible_robot_count(self.selected_cell_coords),
+                building_state,
+                outpost_progress)
+
+    def refresh_selected_popup_if_needed(self, force: bool = False) -> None:
+        if self.selected_cell_coords is None or self.selected_cell is None:
+            self._selected_popup_state = None
+            return
+
+        current_state = self._build_selected_popup_state()
+        if force or current_state != self._selected_popup_state:
+            row, col = self.selected_cell_coords
+            cell = self.game_map.grid[row][col]
+            self.selected_cell = cell
+            self.update_popup_for_cell(self.selected_cell_coords, cell)
+            self._selected_popup_state = current_state
 
     def show_commands(self, mouse_pos: tuple[int, int]) -> None:
         selected = self.map_renderer.pick_cell(mouse_pos,
@@ -578,6 +629,8 @@ class PlayingState(State):
         self.update_rebel_moves(dt)
         self.update_robot_moves(dt)
         self.update_battles(dt)
+        self.update_overseer_timer(dt)
+        self.refresh_selected_popup_if_needed()
 
         result = self.overseer.poll()
         if result is not None:
@@ -587,6 +640,13 @@ class PlayingState(State):
                 self.apply_enemy_action(payload)
             else:
                 print(f"LLM call failed: {payload}")
+
+    def update_overseer_timer(self, dt: float) -> None:
+        self._overseer_time_until_call -= dt
+        while self._overseer_time_until_call <= 0:
+            self.start_overseer_request()
+            self._overseer_time_until_call += (
+                self.OVERSEER_CALL_INTERVAL_SECONDS)
 
     def update_battles(self, dt: float) -> None:
         if dt < 0:
@@ -617,29 +677,29 @@ class PlayingState(State):
 
                     attacker_faction, attacker_count = attack_state
                     cell_coords = (row_index, col_index)
-                    if cell_coords not in self._active_building_attacks:
-                        if attacker_faction == "rebels":
-                            unit_name = (
-                                "rebel" if attacker_count == 1 else "rebels")
-                        else:
-                            unit_name = (
-                                "robot" if attacker_count == 1 else "robots")
+                    attack_already_logged = (
+                        cell_coords in self._active_building_attacks)
 
-                        self._log_event(f"{attacker_count} {unit_name} "
-                                        "started attacking building on "
-                                        f"{self._cell_name(cell_coords)}")
+                    damage = self._building_damage_roll(attacker_count)
+                    if damage > 0 and not attack_already_logged:
+                        self._log_event(f"{cell.building.name} "
+                                        "is being attacked")
 
-                    cell.building.take_damage(
-                        self.BUILDING_DAMAGE_PER_BATTLE_TICK)
+                    if damage > 0:
+                        building_name = cell.building.name
+                        cell.building.take_damage(damage)
+                    else:
+                        building_name = cell.building.name
+
                     if cell.building.current_durability <= 0:
-                        self._log_event(f"{attacker_faction} destroyed "
-                                        "building on "
-                                        f"{self._cell_name(cell_coords)}")
+                        self._log_event(f"{building_name} "
+                                        "has been destroyed")
                         cell.set_building(None)
                         continue
 
-                    next_active_building_attacks[cell_coords] = (
-                        attacker_faction)
+                    if attack_already_logged or damage > 0:
+                        next_active_building_attacks[cell_coords] = (
+                            attacker_faction)
 
             self._active_building_attacks = next_active_building_attacks
 
@@ -657,6 +717,7 @@ class PlayingState(State):
                             selected_cell.battle_occurring)
         if updated_snapshot != selected_snapshot:
             self.update_popup_for_cell(selected_coords, selected_cell)
+            self._selected_popup_state = self._build_selected_popup_state()
 
     def update_outpost_constructions(self, dt: float) -> None:
         if dt < 0:
@@ -782,7 +843,7 @@ class PlayingState(State):
                     arrivals_by_destination[(next_row,
                                              next_col)] += move.robots
                 else:
-                    move.time_until_advance += self.ROBOT_MOVE_TIME
+                    move.time_until_advance += self.commander.UNIT_MOVE_TIME
 
             if move.current_index < len(move.path) - 1:
                 remaining_moves.append(move)
@@ -806,11 +867,12 @@ class PlayingState(State):
         while remaining_robots > 0:
             batch_size = min(remaining_robots, self.ROBOT_MOVE_BATCH_SIZE)
             remaining_robots -= batch_size
+            move_time = self.commander.UNIT_MOVE_TIME
             self.active_robot_moves.append(RobotMoveBatch(
                 path=list(path),
                 robots=batch_size,
                 current_index=0,
-                time_until_advance=(batch_index + 1) * self.ROBOT_MOVE_TIME,
+                time_until_advance=(batch_index + 1) * move_time,
             ))
             batch_index += 1
 
@@ -823,7 +885,7 @@ class PlayingState(State):
             if preserved_delay > 0:
                 batch.time_until_advance = preserved_delay
             else:
-                batch.time_until_advance = self.ROBOT_MOVE_TIME
+                batch.time_until_advance = self.commander.UNIT_MOVE_TIME
 
     def render(self, screen) -> None:
         screen.fill((10, 12, 20))
@@ -888,14 +950,7 @@ class PlayingState(State):
     def apply_enemy_action(self, response) -> None:
         name, args = self.overseer.extract_function_call(response)
         if name is None:
-            text = getattr(response, "text", None)
-            if text:
-                print(f"Overseer output: {text}")
-            else:
-                print("Overseer output: no function call found.")
             return
-
-        print(f"Overseer output: function={name}, args={args}")
 
         if name == "build_robots":
             self._apply_enemy_build_robots(args)
@@ -904,8 +959,6 @@ class PlayingState(State):
         if name == "rally_robots":
             self._apply_enemy_rally_robots(args)
             return
-
-        print(f"Unknown overseer function call: {name}")
 
     def _parse_function_args(self, args) -> dict[str, str]:
         if isinstance(args, Mapping):
