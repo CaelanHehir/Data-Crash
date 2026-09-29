@@ -32,13 +32,17 @@ def _load_dotenv(dotenv_path: Path) -> None:
 
 
 class Overseer:
+    STARTING_LOG_EVENT = (
+            "Mission received: rout the last remaining human rebels using the "
+            "10 datacenters and 500 robots assigned to you.")
+
     def __init__(self) -> None:
         project_root = Path(__file__).resolve().parents[2]
         _load_dotenv(project_root / ".env")
 
         self.context = ""
         self.recent_logs: list[str] = []
-        self.last_called_timestamp = 0.0
+        self.last_called_timestamp = -1.0
         self.turn_number = 0
 
         self.llm_model = "gemini-3.5-flash-lite"
@@ -60,6 +64,8 @@ class Overseer:
             "Game rules:\n"
             "- Each Datacenter can produce robot soldiers to attack "
             "rebel-held territories or defend your own.\n"
+            "- Rebels are the enemy's soldiers, and robots are your "
+            "soldiers.\n"
             "- You act once per turn: a single tool call representing one "
             "action. You can either build 100 robots in one of your "
             "controlled databases, or move a group of robots to another "
@@ -85,20 +91,14 @@ class Overseer:
             "Think step-by-step about your best next move. "
             "Focus on immediate tactical priorities based on the map, "
             "keeping in mind that you can only execute one action at a "
-            "time.\n"
-            "You will receive logs that detail relevant activity. They will "
-            "follow this format: <timestamp> - <event>. You can refer to "
-            "these logs to enhance your strategy.\n"
-            "Return plain text strategy notes only, no tool "
-            "calls. Your output should contain two sections: "
-            "- Map analysis: go over your own current situation, "
-            "as well as the rebels' situation. Determine who currently has "
-            "a better strategic position by analysing the current map state, "
-            "the number of allied and enemy soldiers, and the event logs "
-            "provided to you.\n"
+            "time. DO NOT WRITE A TOOL CALL.\n"
+            "Your output should contain two sections: "
+            "- Map analysis: go over how your and the rebels' situations "
+            "have changed based on the provided activity logs. Determine who "
+            "currently has a better strategic position based on the "
+            "information available to you.\n"
             "- Plan: use your analysis to decide on the best course of "
             "action. You can only make one decision per turn.\n"
-            "Keep roleplay to a minimum.\n\n"
             "{prompt}")
 
     def request(self, context: str = "",
@@ -136,8 +136,7 @@ class Overseer:
             else:
                 self.context = strategy_section
 
-        prompt = self.context
-        self.take_action(prompt)
+        self.take_action(strategy)
 
     def build_prompt(self) -> str:
         sections = [self.base_instructions]
@@ -177,6 +176,9 @@ class Overseer:
             return None
 
         raw_timestamp = entry[:sep_index].strip()
+        if raw_timestamp.endswith("s"):
+            raw_timestamp = raw_timestamp[:-1].strip()
+
         try:
             return float(raw_timestamp)
         except ValueError:

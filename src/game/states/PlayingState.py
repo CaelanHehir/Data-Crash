@@ -60,8 +60,8 @@ class PlayingState(State):
     ROBOT_MOVE_BATCH_SIZE = 500
     ROBOT_BUILD_AMOUNT = 100
 
-    OVERSEER_FIRST_CALL_DELAY_SECONDS = 120.0
-    OVERSEER_CALL_INTERVAL_SECONDS = 30.0
+    OVERSEER_FIRST_CALL_DELAY_SECONDS = 90.0
+    OVERSEER_CALL_INTERVAL_SECONDS = 15.0
 
     HUD_PANEL_WIDTH = 220
     HUD_PANEL_HEIGHT = 35
@@ -111,6 +111,7 @@ class PlayingState(State):
         self._battle_elapsed = 0.0
         self.current_timestamp_seconds = 0.0
         self.game_logs.clear()
+        self._log_event(self.overseer.STARTING_LOG_EVENT)
         self._active_battle_cells = set()
         self._active_building_attacks = {}
         self.active_robot_moves = []
@@ -156,7 +157,6 @@ class PlayingState(State):
         for _ in range(enemy_units):
             if random() < self.BUILDING_DAMAGE_CHANCE_PER_ENEMY:
                 damage += 1
-
         return damage
 
     def _battle_cells(self) -> set[tuple[int, int]]:
@@ -621,42 +621,106 @@ class PlayingState(State):
 
     def build_context(self) -> str:
         datacenter_cells: list[str] = []
-        headquarters_cell: str = ""
+        headquarters_cells: list[str] = []
         outpost_cells: list[str] = []
+        outpost_construction_cells: list[str] = []
         forces_cells: list[str] = []
+        contested_cells: list[str] = []
+
+        total_robots = 0
+        total_rebels = 0
 
         for row_index, row in enumerate(self.game_map.grid):
             for col_index, cell in enumerate(row):
-                cell_ref = (f"{cell.sector}{cell.id:02d} "
-                            f"({row_index}, {col_index})")
+                cell_coords = (row_index, col_index)
+                cell_name = self._cell_name(cell_coords)
+                cell_ref = f"{cell_name} ({row_index}, {col_index})"
+
+                rebels = self.visible_rebel_count(cell_coords)
+                robots = self.visible_robot_count(cell_coords)
+                total_rebels += rebels
+                total_robots += robots
+
+                status_parts: list[str] = []
+                if cell.battle_occurring:
+                    status_parts.append("battle")
+                if cell_coords in self._active_building_attacks:
+                    status_parts.append("building under attack")
+                status = ", ".join(status_parts) if status_parts else "quiet"
 
                 if isinstance(cell.building, Datacenter):
-                    datacenter_cells.append(cell_ref)
+                    datacenter_cells.append(
+                        f"{cell_ref}: durability="
+                        f"{cell.building.current_durability}/"
+                        f"{cell.building.max_durability}, "
+                        f"robots={robots}, rebels={rebels}, status={status}")
 
-                if isinstance(cell.building, (Headquarters)):
-                    headquarters_cell = cell_ref
+                if isinstance(cell.building, Headquarters):
+                    headquarters_cells.append(
+                        f"{cell_ref}: durability="
+                        f"{cell.building.current_durability}/"
+                        f"{cell.building.max_durability}, "
+                        f"mode={cell.building.mode}, "
+                        f"robots={robots}, rebels={rebels}, status={status}")
 
-                if isinstance(cell.building, (Outpost)):
-                    outpost_cells.append(f"{cell_ref}")
+                if isinstance(cell.building, Outpost):
+                    outpost_cells.append(
+                        f"{cell_ref}: durability="
+                        f"{cell.building.current_durability}/"
+                        f"{cell.building.max_durability}, "
+                        f"robots={robots}, rebels={rebels}, status={status}")
 
-                rebels = self.visible_rebel_count((row_index, col_index))
-                robots = self.visible_robot_count((row_index, col_index))
+                if cell_coords in self.active_outpost_constructions:
+                    progress = self.outpost_construction_progress(cell_coords)
+                    build_rate = self.outpost_build_rate_multiplier(
+                        cell_coords)
+                    outpost_construction_cells.append(
+                        f"{cell_ref}: progress={progress * 100:.0f}%, "
+                        f"build_rate={build_rate:.2f}x, "
+                        f"robots={robots}, rebels={rebels}, status={status}")
+
+                if rebels > 0 and robots > 0:
+                    contested_cells.append(
+                        f"{cell_ref}: rebels={rebels}, robots={robots}, "
+                        f"status={status}")
+
                 if rebels > 0 or robots > 0:
                     forces_cells.append(
-                        f"{cell_ref}: rebels={rebels}, robots={robots}")
+                        f"{cell_ref}: rebels={rebels}, robots={robots}, "
+                        f"status={status}")
 
-        lines = []
+        lines: list[str] = []
 
+        lines.append("Strategic summary:")
+        lines.append(f"- Total robots on map: {total_robots}")
+        lines.append(f"- Total rebels on map: {total_rebels}")
+        lines.append(f"- Rebel manpower: {self.commander.manpower}")
+        lines.append(
+            "- Active robot move groups: "
+            f"{len(self.active_robot_moves)}")
+        lines.append(
+            "- Active rebel move groups: "
+            f"{len(self.commander.active_rebel_moves)}")
+
+        lines.append("")
         lines.append("Your Datacenters:")
         lines.extend(datacenter_cells or ["none"])
 
         lines.append("")
         lines.append("Enemy Headquarters:")
-        lines.append(headquarters_cell or "none")
+        lines.extend(headquarters_cells or ["none"])
 
         lines.append("")
         lines.append("Enemy Outposts:")
         lines.extend(outpost_cells or ["none"])
+
+        lines.append("")
+        lines.append("Enemy Outposts under construction:")
+        lines.extend(outpost_construction_cells or ["none"])
+
+        lines.append("")
+        lines.append("Contested cells (both factions present):")
+        lines.extend(contested_cells or ["none"])
 
         lines.append("")
         lines.append("Cells with rebels or robots:")
