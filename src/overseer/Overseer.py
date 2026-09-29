@@ -169,7 +169,6 @@ class Overseer:
                 continue
             if previous_timestamp < timestamp <= current_timestamp:
                 filtered.append(entry)
-        print(filtered)
         return filtered
 
     def _parse_log_timestamp(self, entry: str) -> float | None:
