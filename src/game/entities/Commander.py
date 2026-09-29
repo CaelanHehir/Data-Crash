@@ -27,8 +27,8 @@ class RebelMoveBatch:
 
 class Commander:
     STARTING_MANPOWER = 100
-    REBEL_MOVE_TIME = 0.5
-    REBEL_MOVE_BATCH_SIZE = 500
+    UNIT_MOVE_TIME = 0.5
+    UNIT_MOVE_BATCH_SIZE = 500
 
     def __init__(self, manpower: int = STARTING_MANPOWER) -> None:
         if manpower < 0:
@@ -174,7 +174,7 @@ class Commander:
                     destination_cell = game_map.grid[next_row][next_col]
                     destination_cell.add_rebels(move.rebels)
                 else:
-                    move.time_until_advance += self.REBEL_MOVE_TIME
+                    move.time_until_advance += self.UNIT_MOVE_TIME
 
             if move.current_index < len(move.path) - 1:
                 remaining_moves.append(move)
@@ -261,14 +261,14 @@ class Commander:
         remaining_rebels = rebels_to_move
         batch_index = 0
         while remaining_rebels > 0:
-            batch_size = min(remaining_rebels, self.REBEL_MOVE_BATCH_SIZE)
+            batch_size = min(remaining_rebels, self.UNIT_MOVE_BATCH_SIZE)
 
             remaining_rebels -= batch_size
             self.active_rebel_moves.append(RebelMoveBatch(
                 path=list(path),
                 rebels=batch_size,
                 current_index=0,
-                time_until_advance=(batch_index + 1) * self.REBEL_MOVE_TIME,
+                time_until_advance=(batch_index + 1) * self.UNIT_MOVE_TIME,
             ))
             batch_index += 1
 
@@ -281,4 +281,4 @@ class Commander:
             if preserved_delay > 0:
                 batch.time_until_advance = preserved_delay
             else:
-                batch.time_until_advance = self.REBEL_MOVE_TIME
+                batch.time_until_advance = self.UNIT_MOVE_TIME
