@@ -195,7 +195,7 @@ class Overseer:
                         disable=True)))
 
             response = self.client.models.generate_content(
-                model="gemini-3.5-flash-lite",
+                model=self.llm_model,
                 contents=strategy_prompt,
                 config=config)
 
