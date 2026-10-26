@@ -10,21 +10,6 @@ This game was built as a proof of concept. The game loop, rules and LLM integrat
 
 The game never blocks on the model. The Overseer runs in a background thread and hands its result back to the game loop through a queue.
 
-```
- PlayingState (60 FPS)                         Overseer (background thread)
- ─────────────────────                         ────────────────────────────
- every 15 s (first call at 90 s)
-   build_context()  ── map snapshot ─────────▶  1. Strategy call
-   game_logs        ── events since last turn ▶     plain-text analysis + plan, no tools
-                                                2. Action call
-                                                    the plan is sent with tool calling forced
-                                                    (mode="ANY"), so the model must return
-                                                    exactly one function call
- poll() each frame ◀──────── (status, response) ─
-   apply_enemy_action()
-     validate arguments, then mutate the game
-```
-
 1. **State serialization.** `PlayingState.build_context()` writes a text summary of the map: totals for each side, every datacenter, enemy headquarters and outposts (with durability and mode), outposts under construction, contested cells, and every cell holding units. Cells are referred to by name, such as `Alpha01`.
 2. **Event log.** Notable events are logged with timestamps (battles starting and ending, buildings attacked or destroyed, units arriving, outposts started or finished). Each turn the Overseer only sees the entries since its previous turn.
 3. **Reason, then act.** The first request asks the model to analyse the situation and write a plan, with tools disabled. The second request forces a function call.
@@ -50,7 +35,7 @@ You play the rebels. The Overseer plays the robots.
 
 A 20×20 grid split into 25 sectors of 4×4 cells, named with the NATO alphabet (`Alpha`…`Yankee`). A cell is identified by its sector and index, for example `Alpha01` or `Kilo16`. Each run randomly places your **Headquarters** and **10 Datacenters** in 11 different sectors. Each Datacenter starts with 50 robots, 500 in total.
 
-### Your economy and units
+### Economy and units
 
 - You start with **100 manpower**.
 - A Headquarters (or Outpost) is in one of two modes, which you toggle with `T`:
