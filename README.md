@@ -129,5 +129,3 @@ src/
 - **Robot production is free.** The prompt tells the model that building costs resources, but the game doesn't enforce a cost, so the only limit is one action per turn.
 - **One action per turn, every 15 s.** The Overseer is deliberately slow and coarse. It moves entire stacks at once and can't split groups.
 - **Silent failure on API errors.** If the strategy call fails, the action call is sent an empty prompt and the error is only printed to the terminal. The match continues without the Overseer acting.
-- **Model name is hardcoded** in two places in `Overseer.py` (`llm_model` and `ponder_strategy`).
-- `assets/map.json` is currently an empty placeholder. Maps are generated randomly at runtime.
