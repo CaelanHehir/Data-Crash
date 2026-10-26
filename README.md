@@ -1,10 +1,10 @@
 # Data Crash
 
-A real-time strategy game used as a proof of concept for an **LLM that plays inside a live game environment**.
+A real-time strategy game featuring an **LLM that plays inside a live game environment**.
 
 You command a human rebellion. Your opponent is the **Overseer**, an AI overlord whose decisions come from a large language model. Every few seconds the game serializes its own state (unit positions, building health, ongoing battles, recent events) into a prompt, sends it to the LLM, and executes whichever action the model chooses. The Overseer reacts to what you actually do rather than following a scripted routine.
 
-> **Status:** proof of concept. The game loop, rules and LLM integration work end to end, but the game is not balanced or polished.
+This game was built as a proof of concept. The game loop, rules and LLM integration work end to end, but the game is not balanced or polished.
 
 ## How the LLM integration works
 
