@@ -24,7 +24,7 @@ To avoid the game stalling while the LLM generates an output, the Overseer scrip
 
 5. **Validation:** Model output is verified before actually calling the function. If it tries to move troops that don't exist, spawn troops in an invalid location, or any other impossible moves, the action is rejected.
 
-The model used is set to `gemini-3.5-flash-lite` through the Google Gen AI SDK (`google-genai`).
+The model used is set to `gemini-3.5-flash-lite` through the Google Gen AI SDK (`google-genai`). All of the model's outputs are printed to the terminal so users can see its reasoning.
 
 
 ## Gameplay
